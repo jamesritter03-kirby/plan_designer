@@ -490,6 +490,13 @@ select {
 .sheet-head h2 { margin: 0; font-size: 19px; }
 .sheet-body { padding: 16px 18px; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 
+/* On-screen drawing-package viewer — force the legible light sheet styling */
+.drawings-view .view-box {
+  border: 1px solid #999; border-radius: 12px; margin-bottom: 12px; padding: 8px; background: #fff;
+}
+.drawings-view .view-label { font-size: 13px; font-weight: 700; margin-bottom: 4px; color: #000; }
+.drawings-view .view-box svg { width: 100%; height: auto; display: block; }
+
 /* Wizard */
 .wizard-sheet { min-height: 60vh; }
 .wizard-progress { height: 4px; background: var(--surface-2); border-radius: 999px; margin: 14px 18px 0; overflow: hidden; }

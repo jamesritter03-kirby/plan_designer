@@ -4,7 +4,7 @@
 
   const FT_PER_M = 3.280839895;
   const IN_PER_M = 39.3700787;
-  const APP_VERSION = "1.5.3";
+  const APP_VERSION = "1.5.4";
   const STORE_KEY = "shedPlanner.designs.v1";
   const SEEN_KEY = "shedPlanner.seen.v1";
   const THEME_KEY = "shedPlanner.theme.v1";
@@ -507,6 +507,11 @@
   function renderPrintViews(g) {
     const host = $("#printViews");
     if (!host) return;
+    host.innerHTML = buildDrawingSheets(g);
+  }
+
+  // Build the full drawing-package HTML (used by print and the on-screen viewer).
+  function buildDrawingSheets(g) {
     const savedDim = C.dim, savedGap = C.gap, savedStud = C.stud;
     C.dim = "#51607a"; C.gap = "#f4f7fb"; C.stud = "#caa96b";
     const sheets = [
@@ -524,7 +529,14 @@
       .join("");
     html += `<div class="view-box"><div class="view-label">A${sheets.length + 1} — Schedules &amp; Notes</div>` +
       `${scheduleHtml()}${notesHtml()}${titleBlockHtml("Schedules & Notes", total, total)}</div>`;
-    host.innerHTML = html;
+    return html;
+  }
+
+  // On-screen drawing-package viewer (menu → View drawing package).
+  function openDrawings() {
+    const host = $("#drawingsView");
+    if (host) host.innerHTML = buildDrawingSheets(geometry());
+    openOverlay("#drawings");
   }
 
   function svgWrap(inner, vw, vh) {
@@ -1659,7 +1671,7 @@
       panel.hidden ? open() : close();
     });
     // close when picking a menu action, or clicking outside, or pressing Escape
-    ["#designsBtn", "#saveBtn", "#printBtn"].forEach((sel) => {
+    ["#designsBtn", "#drawingsBtn", "#saveBtn", "#printBtn"].forEach((sel) => {
       const el = $(sel);
       if (el) el.addEventListener("click", close);
     });
@@ -1725,6 +1737,8 @@
     $("#printBtn").addEventListener("click", () => window.print());
     $("#saveBtn").addEventListener("click", saveCurrent);
     $("#designsBtn").addEventListener("click", openDesigns);
+    $("#drawingsBtn").addEventListener("click", openDrawings);
+    $("#drawingsClose").addEventListener("click", () => closeOverlay("#drawings"));
     initMenu();
     $("#designsClose").addEventListener("click", () => closeOverlay("#designs"));
     $("#newDesignBtn").addEventListener("click", () => {

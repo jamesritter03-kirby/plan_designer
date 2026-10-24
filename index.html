@@ -10,7 +10,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>Planner</title>
-  <link rel="stylesheet" href="css/styles.css?v=1.5.3" />
+  <link rel="stylesheet" href="css/styles.css?v=1.5.4" />
 </head>
 <body>
   <header class="app-header">
@@ -31,6 +31,7 @@
             <button type="button" id="themeBtn" class="icon-btn" aria-label="Toggle light or dark theme">🌙</button>
           </div>
           <button type="button" id="designsBtn" class="menu-item" role="menuitem">📁 Saved designs</button>
+          <button type="button" id="drawingsBtn" class="menu-item" role="menuitem">📐 Drawing package</button>
           <button type="button" id="saveBtn" class="menu-item" role="menuitem">💾 Save design</button>
           <button type="button" id="printBtn" class="menu-item" role="menuitem">🖨️ Print / PDF</button>
         </div>
@@ -329,6 +330,19 @@
     </div>
   </div>
 
-  <script src="js/app.js?v=1.5.3"></script>
+  <!-- DRAWING PACKAGE -->
+  <div id="drawings" class="overlay" aria-hidden="true">
+    <div class="sheet sheet-wide" role="dialog" aria-modal="true" aria-labelledby="drawingsTitle">
+      <div class="sheet-head">
+        <h2 id="drawingsTitle">Drawing Package</h2>
+        <button type="button" id="drawingsClose" class="icon-btn" aria-label="Close">✕</button>
+      </div>
+      <div class="sheet-body">
+        <div id="drawingsView" class="drawings-view"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/app.js?v=1.5.4"></script>
 </body>
 </html>
