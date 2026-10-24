@@ -552,14 +552,38 @@ select {
 .btn-ghost:active { transform: scale(0.98); }
 
 @media print {
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .app-header, .tabs, .actions, .preview-head .view-toggle, .unit-toggle, .overlay, .toast, .header-right { display: none !important; }
-  html, body { height: auto !important; max-width: none; padding: 0; margin: 0; color: #000; background: #fff; }
-  main { padding: 0 10px; }
-  .tab-panel { display: block !important; }
-  .tab-panel + .tab-panel { page-break-before: always; }
-  .group, fieldset, .preview-card, .step { break-inside: avoid; }
+  html, body {
+    height: auto !important;
+    min-height: 0 !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    color: #000;
+    background: #fff;
+  }
+  main { padding: 0 12px !important; }
+  /* Force every tab to print, fully opaque (the fade-in animation otherwise leaves them blank) */
+  .tab-panel {
+    display: block !important;
+    opacity: 1 !important;
+    animation: none !important;
+    transform: none !important;
+  }
+  .tab-panel + .tab-panel { break-before: page; page-break-before: always; }
+  .tab-panel::before {
+    content: attr(data-title);
+    display: block;
+    font-size: 19px;
+    font-weight: 800;
+    margin: 0 0 10px;
+    padding-bottom: 4px;
+    border-bottom: 2px solid #000;
+  }
+  .preview-card, .group, fieldset, .step, .op-card, .row { break-inside: avoid; page-break-inside: avoid; }
   .preview-stage { background: #fff !important; }
-  .group, fieldset, .preview-card, .step { border-color: #999; background: #fff; color: #000; }
-  .group h3, .summary-strip .chip, .step-num, .step-tag { background: #eee; color: #000; }
+  .group, fieldset, .preview-card, .step, .op-card { border-color: #999; background: #fff; color: #000; }
+  .group h3, .summary-strip .chip, .step-num, .step-tag, .group h3 .count { background: #eee; color: #000; }
   :root { --text: #000; --muted: #333; --accent: #a05a00; }
 }
