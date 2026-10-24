@@ -1055,27 +1055,33 @@
   }
 
   function finishWizard() {
-    const u = wiz.draft.units;
-    const toFtU = (v) => (u === "metric" ? v * FT_PER_M : v);
-    state.units = u;
-    state.name = $("#wizName").value.trim();
-    state.purpose = wiz.draft.purpose;
-    state.roofType = wiz.draft.roofType;
-    state.spacing = parseInt(wiz.draft.spacing, 10);
-    state.lumber = wiz.draft.lumber;
-    state.pitch = parseFloat($("#wizPitch").value);
-    state.width = toFtU(parseFloat($("#wizWidth").value) || 8);
-    state.depth = toFtU(parseFloat($("#wizDepth").value) || 10);
-    state.wallHeight = toFtU(parseFloat($("#wizWallHeight").value) || 7);
-    if (!state.name) state.name = defaultName();
-    state.id = null; // new design
-    $$(".unit-btn").forEach((b) => b.classList.toggle("active", b.dataset.unit === state.units));
-    setUnitLabels();
-    stateToForm();
-    renderAll();
-    saveCurrent();
-    localStorage.setItem(SEEN_KEY, "1");
-    closeOverlay("#wizard");
+    try {
+      const u = wiz.draft.units;
+      const toFtU = (v) => (u === "metric" ? v * FT_PER_M : v);
+      state.units = u;
+      state.name = $("#wizName").value.trim();
+      state.purpose = wiz.draft.purpose;
+      state.roofType = wiz.draft.roofType;
+      state.spacing = parseInt(wiz.draft.spacing, 10);
+      state.lumber = wiz.draft.lumber;
+      state.pitch = parseFloat($("#wizPitch").value);
+      state.width = toFtU(parseFloat($("#wizWidth").value) || 8);
+      state.depth = toFtU(parseFloat($("#wizDepth").value) || 10);
+      state.wallHeight = toFtU(parseFloat($("#wizWallHeight").value) || 7);
+      if (!state.name) state.name = defaultName();
+      state.id = null; // new design
+      $$(".unit-btn").forEach((b) => b.classList.toggle("active", b.dataset.unit === state.units));
+      setUnitLabels();
+      stateToForm();
+      renderAll();
+      saveCurrent();
+    } catch (err) {
+      console.error("Wizard finish error:", err);
+    } finally {
+      // Always leave the wizard, even if a render/save step hiccuped.
+      localStorage.setItem(SEEN_KEY, "1");
+      closeOverlay("#wizard");
+    }
   }
 
   function initWizard() {
