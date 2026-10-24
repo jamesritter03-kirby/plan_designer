@@ -4,7 +4,7 @@
 
   const FT_PER_M = 3.280839895;
   const IN_PER_M = 39.3700787;
-  const APP_VERSION = "1.6.2";
+  const APP_VERSION = "1.7.0";
   const STORE_KEY = "shedPlanner.designs.v1";
   const SEEN_KEY = "shedPlanner.seen.v1";
   const THEME_KEY = "shedPlanner.theme.v1";
@@ -17,6 +17,7 @@
     roofType: "gable",
     roofCovering: "asphalt",
     pitch: 4,
+    saltboxPeak: 0.4, // ridge position as fraction of width (from front/left wall)
     overhang: 12, // inches
     width: 8, // ft
     depth: 10, // ft
@@ -31,6 +32,8 @@
     lat: null,
     lon: null,
     zip: "",
+    customer: { name: "", phone: "", email: "", street: "", city: "", region: "", postal: "" },
+    plan: { startDate: "", hoursPerDay: 6, phases: {} }, // schedule & time tracking
     camYaw: -0.6, // 3D orbit angles (radians)
     camPitch: 0.5,
     view: "front",
@@ -45,6 +48,7 @@
   const dispSmall = (inch) => (state.units === "metric" ? inch * 2.54 : inch); // cm vs in
   const toInches = (v) => (state.units === "metric" ? v / 2.54 : v);
   const round = (n, d = 2) => Math.round(n * 10 ** d) / 10 ** d;
+  const saltboxFrac = () => Math.min(0.85, Math.max(0.15, state.saltboxPeak || 0.4));
 
   function fmtLen(ft) {
     if (ft <= 0) return "—";
@@ -129,7 +133,8 @@
         note: "Square cuts. Build with a slight slope for drainage.",
       });
     } else if (state.roofType === "saltbox") {
-      const shortRun = W * 0.4, longRun = W * 0.6;
+      const frac = saltboxFrac();
+      const shortRun = W * frac, longRun = W * (1 - frac);
       const rise = shortRun * (p / 12); // ridge height set by steep (short) side
       const shortAng = (Math.atan(rise / shortRun) * 180) / Math.PI;
       const longAng = (Math.atan(rise / longRun) * 180) / Math.PI;
@@ -753,7 +758,7 @@
         `<polygon points="${sx(-oh)},${sy(peak)} ${sx(W + oh)},${sy(H)} ${sx(W + oh)},${sy(H - 0.2)} ${sx(-oh)},${sy(peak - 0.2)}" fill="${C.wall2}"/>`;
     }
     if (state.roofType === "saltbox") {
-      const ridgeX = W * 0.4;
+      const ridgeX = W * saltboxFrac();
       return `<polygon points="${sx(-oh)},${sy(H)} ${sx(ridgeX)},${sy(peak)} ${sx(W + oh)},${sy(H)}" ${st}/>`;
     }
     if (state.roofType === "gambrel") {
@@ -853,7 +858,7 @@
     const W = state.width, H = state.wallHeight, peak = g.peakHeight;
     if (state.roofType === "gable") return [{ x: 0, z: 0 }, { x: 0, z: H }, { x: W / 2, z: peak }, { x: W, z: H }, { x: W, z: 0 }];
     if (state.roofType === "lean-to") return [{ x: 0, z: 0 }, { x: 0, z: peak }, { x: W, z: H }, { x: W, z: 0 }];
-    if (state.roofType === "saltbox") return [{ x: 0, z: 0 }, { x: 0, z: H }, { x: W * 0.4, z: peak }, { x: W, z: H }, { x: W, z: 0 }];
+    if (state.roofType === "saltbox") return [{ x: 0, z: 0 }, { x: 0, z: H }, { x: W * saltboxFrac(), z: peak }, { x: W, z: H }, { x: W, z: 0 }];
     if (state.roofType === "gambrel") {
       const R = W / 2, knee = g.kneeHeight, kx1 = W / 2 - R * Math.cos(Math.PI / 4), kx2 = W / 2 + R * Math.cos(Math.PI / 4);
       return [{ x: 0, z: 0 }, { x: 0, z: H }, { x: kx1, z: knee }, { x: W / 2, z: peak }, { x: kx2, z: knee }, { x: W, z: H }, { x: W, z: 0 }];
@@ -999,7 +1004,7 @@
       s += `<line x1="${sx(W / 2 - rx)}" y1="${sy(tieZ)}" x2="${sx(W / 2 + rx)}" y2="${sy(tieZ)}" stroke="${C.line}" stroke-width="1.6" opacity="0.65"/>`;
     }
     // rise / run reference triangle
-    const apexX = state.roofType === "saltbox" ? W * 0.4 : state.roofType === "lean-to" ? 0 : W / 2;
+    const apexX = state.roofType === "saltbox" ? W * saltboxFrac() : state.roofType === "lean-to" ? 0 : W / 2;
     if (state.roofType !== "flat") {
       s += `<line x1="${sx(apexX)}" y1="${sy(peak)}" x2="${sx(W)}" y2="${sy(peak)}" stroke="${C.line}" stroke-width="1" stroke-dasharray="4 3" opacity="0.6"/>`;
       s += `<line x1="${sx(W)}" y1="${sy(peak)}" x2="${sx(W)}" y2="${sy(H)}" stroke="${C.line}" stroke-width="1" stroke-dasharray="4 3" opacity="0.6"/>`;
@@ -1022,10 +1027,15 @@
     const sz = `${fmtLen(state.width)} × ${fmtLen(state.depth)} × ${fmtLen(g.peakHeight)} peak`;
     const name = escapeHtml(state.name || "Shed Plan");
     const addr = escapeHtml(state.address || "—");
+    const c = state.customer || {};
+    const custParts = [c.name, c.phone, c.email].filter(Boolean).map(escapeHtml);
+    const custLoc = [c.street, c.city, c.region, c.postal].filter(Boolean).map(escapeHtml).join(", ");
+    const custLine = [custParts.join(" · "), custLoc].filter(Boolean).join(" — ") || "—";
     return `<table class="title-block"><tbody>` +
-      `<tr><td class="tb-name" colspan="2">${name}</td><td class="tb-sheet" rowspan="3">${escapeHtml(sheetName.replace(/^A\d+\s*—\s*/, ""))}<br><b>Sheet ${no} / ${total}</b></td></tr>` +
+      `<tr><td class="tb-name" colspan="2">${name}</td><td class="tb-sheet" rowspan="4">${escapeHtml(sheetName.replace(/^A\d+\s*—\s*/, ""))}<br><b>Sheet ${no} / ${total}</b></td></tr>` +
       `<tr><td>Size: ${sz}</td><td>Roof: ${ROOF_NAMES[state.roofType]} · ${roofCover().label}</td></tr>` +
       `<tr><td>Location: ${addr}</td><td>Date: ${date} · v${APP_VERSION}</td></tr>` +
+      `<tr><td colspan="2">Customer: ${custLine}</td></tr>` +
       `</tbody></table>`;
   }
 
@@ -1341,6 +1351,155 @@
       .join("");
   }
 
+  /* ---------- Project plan / schedule ---------- */
+  const PHASE_ORDER = ["Foundation", "Floor", "Walls", "Roof", "Shell", "Finish"];
+  // Recommended base crew-hours per phase for an 8×10 shed; scaled by footprint.
+  const PHASE_BASE_HOURS = { Foundation: 5, Floor: 7, Walls: 12, Roof: 12, Shell: 7, Finish: 14 };
+
+  function phaseFactor() {
+    const area = (state.width || 0) * (state.depth || 0);
+    return Math.max(0.6, Math.min(3, area / 80));
+  }
+
+  // Assemble the ordered schedule rows from the build steps, with recommended and
+  // user-entered hours, and a sequential (back-to-back) start/duration in days.
+  function buildPlan() {
+    const steps = buildSteps();
+    const f = phaseFactor();
+    const hpd = Math.max(1, Number(state.plan.hoursPerDay) || 6);
+    const byPhase = {};
+    steps.forEach((s) => { (byPhase[s.tag] = byPhase[s.tag] || []).push(s.title); });
+    const order = PHASE_ORDER.filter((p) => byPhase[p]);
+    Object.keys(byPhase).forEach((p) => { if (!order.includes(p)) order.push(p); });
+
+    let cursor = 0;
+    const rows = order.map((name) => {
+      const rec = Math.max(1, Math.round((PHASE_BASE_HOURS[name] || 6) * f));
+      const pd = state.plan.phases[name] || {};
+      const hasOverride = pd.estOverride != null && pd.estOverride !== "";
+      const est = Math.max(0, hasOverride ? Number(pd.estOverride) : rec);
+      const actual = Math.max(0, Number(pd.actual) || 0);
+      const done = !!pd.done;
+      const durationDays = est / hpd;
+      const startDay = cursor;
+      cursor += durationDays;
+      return { name, steps: byPhase[name], stepCount: byPhase[name].length, rec, est, actual, done, startDay, durationDays };
+    });
+    return { rows, totalDays: cursor, hpd };
+  }
+
+  function planDate(offsetDays) {
+    if (!state.plan.startDate) return null;
+    const d = new Date(state.plan.startDate + "T00:00:00");
+    if (isNaN(d)) return null;
+    d.setDate(d.getDate() + Math.round(offsetDays));
+    return d;
+  }
+  const fmtDate = (d) => (d ? d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "");
+
+  function renderPlan() {
+    const p = buildPlan();
+    renderPlanTable(p);
+    renderPlanChart(p);
+  }
+
+  function renderPlanSummary(p) {
+    const totalEst = p.rows.reduce((a, r) => a + r.est, 0);
+    const totalActual = p.rows.reduce((a, r) => a + r.actual, 0);
+    const finish = planDate(p.totalDays);
+    $("#planSummary").innerHTML =
+      chip(round(p.totalDays, 1), p.totalDays === 1 ? "day est." : "days est.") +
+      chip(totalEst + " h", "est. hours") +
+      chip(totalActual + " h", "logged") +
+      (finish
+        ? chip(finish.toLocaleDateString(undefined, { month: "short", day: "numeric" }), "target finish")
+        : "");
+  }
+
+  function renderPlanTable(p) {
+    renderPlanSummary(p);
+    if (document.activeElement && document.activeElement.closest && document.activeElement.closest("#planTable input")) {
+      // avoid clobbering the field the user is typing in; chart+summary already refreshed
+      return;
+    }
+    const rows = p.rows
+      .map((r) => {
+        const pd = state.plan.phases[r.name] || {};
+        const estVal = pd.estOverride != null && pd.estOverride !== "" ? pd.estOverride : "";
+        return `<tr${r.done ? ' class="pl-done"' : ""}>` +
+          `<td class="pl-name">${r.name}</td>` +
+          `<td class="pl-mid">${r.stepCount}</td>` +
+          `<td class="pl-mid">${r.rec} h</td>` +
+          `<td><input class="pl-in" type="number" min="0" step="0.5" inputmode="decimal" data-phase="${r.name}" data-f="est" value="${estVal}" placeholder="${r.rec}"></td>` +
+          `<td><input class="pl-in" type="number" min="0" step="0.5" inputmode="decimal" data-phase="${r.name}" data-f="actual" value="${r.actual || ""}" placeholder="0"></td>` +
+          `<td class="pl-mid"><input type="checkbox" data-phase="${r.name}" data-f="done"${r.done ? " checked" : ""}></td>` +
+          `</tr>`;
+      })
+      .join("");
+    const totalEst = p.rows.reduce((a, r) => a + r.est, 0);
+    const totalActual = p.rows.reduce((a, r) => a + r.actual, 0);
+    $("#planTable").innerHTML =
+      `<table class="plan-table"><thead><tr>` +
+      `<th>Phase</th><th>Steps</th><th>Rec.</th><th>Est. hrs</th><th>Actual</th><th>✓</th>` +
+      `</tr></thead><tbody>${rows}` +
+      `<tr class="pl-total"><td>Total</td><td></td><td></td><td>${totalEst} h</td><td>${totalActual} h</td><td></td></tr>` +
+      `</tbody></table>`;
+  }
+
+  // SVG Gantt: one bar per phase, sequenced back-to-back across the project days.
+  function renderPlanChart(p) {
+    renderPlanSummary(p);
+    const host = $("#planGantt");
+    if (!host) return;
+    if (!p.rows.length || p.totalDays <= 0) { host.innerHTML = `<p class="win-empty">Add estimated hours to see the schedule.</p>`; return; }
+    const nDays = Math.max(1, Math.ceil(p.totalDays));
+    const labelW = 86, dayW = Math.max(14, Math.min(54, 560 / nDays)), pad = 8;
+    const rowH = 26, headH = 24;
+    const chartW = labelW + nDays * dayW + pad * 2;
+    const chartH = headH + p.rows.length * rowH + pad * 2;
+    const x0 = labelW + pad;
+    const COLORS = { Foundation: "#8a6d3b", Floor: "#b07d2b", Walls: "#15577a", Roof: "#2c7fb8", Shell: "#5a8f3c", Finish: "#a05a00" };
+    let s = `<svg viewBox="0 0 ${chartW} ${chartH}" xmlns="http://www.w3.org/2000/svg" role="img" class="gantt-svg">`;
+    s += `<rect x="0" y="0" width="${chartW}" height="${chartH}" fill="#ffffff"/>`;
+    // day grid + header
+    for (let d = 0; d <= nDays; d++) {
+      const x = x0 + d * dayW;
+      s += `<line x1="${x}" y1="${headH}" x2="${x}" y2="${chartH - pad}" stroke="#d8dee8" stroke-width="1"/>`;
+      if (d < nDays) {
+        const dt = planDate(d + 0.5);
+        const lbl = dt ? fmtDate(dt) : "D" + (d + 1);
+        s += `<text x="${x + dayW / 2}" y="${headH - 8}" fill="#51607a" font-size="9" text-anchor="middle">${lbl}</text>`;
+      }
+    }
+    // bars
+    p.rows.forEach((r, i) => {
+      const y = headH + pad + i * rowH;
+      const bx = x0 + r.startDay * dayW;
+      const bw = Math.max(3, r.durationDays * dayW);
+      const col = r.done ? "#1d7a44" : (COLORS[r.name] || "#15577a");
+      s += `<text x="${pad}" y="${y + rowH / 2 + 3}" fill="#1b2a3a" font-size="11" font-weight="600">${r.name}</text>`;
+      s += `<rect x="${bx}" y="${y + 3}" width="${bw}" height="${rowH - 10}" rx="4" fill="${col}" opacity="${r.done ? 0.9 : 0.85}"/>`;
+      const hrs = `${r.est}h`;
+      if (bw > 26) s += `<text x="${bx + bw / 2}" y="${y + rowH / 2 + 3}" fill="#ffffff" font-size="9" text-anchor="middle">${hrs}</text>`;
+      else s += `<text x="${bx + bw + 3}" y="${y + rowH / 2 + 3}" fill="#51607a" font-size="9">${hrs}</text>`;
+    });
+    s += `</svg>`;
+    host.innerHTML = s;
+  }
+
+  function onPlanTableInput(e) {
+    const el = e.target.closest("[data-phase]");
+    if (!el) return;
+    const name = el.dataset.phase, f = el.dataset.f;
+    const ph = (state.plan.phases[name] = state.plan.phases[name] || {});
+    if (f === "est") ph.estOverride = el.value.trim() === "" ? null : Math.max(0, Number(el.value) || 0);
+    else if (f === "actual") ph.actual = Math.max(0, Number(el.value) || 0);
+    else if (f === "done") ph.done = el.checked;
+    // While typing (input) only refresh the chart to keep focus; on blur/change refresh the table too.
+    if (f === "done" || e.type === "change") renderPlan();
+    else renderPlanChart(buildPlan());
+  }
+
   function resizeImage(file, maxDim, quality) {
     return new Promise((resolve, reject) => {
       const url = URL.createObjectURL(file);
@@ -1392,20 +1551,32 @@
     renderShopping();
     renderCuts();
     renderSteps();
+    renderPlan();
   }
 
   function formToState() {
     state.roofType = $("#roofType").value;
     state.roofCovering = $("#roofCovering").value;
     state.pitch = parseFloat($("#pitch").value);
+    state.saltboxPeak = (parseFloat($("#saltboxPeak").value) || 40) / 100;
     state.overhang = toInches(parseFloat($("#overhang").value) || 0);
     state.width = toFt(parseFloat($("#width").value) || 0);
     state.depth = toFt(parseFloat($("#depth").value) || 0);
     state.wallHeight = toFt(parseFloat($("#wallHeight").value) || 0);
     state.spacing = parseInt($("#spacing").value, 10);
     state.lumber = $("#lumber").value;
+    state.customer = {
+      name: ($("#custName").value || "").trim(),
+      phone: ($("#custPhone").value || "").trim(),
+      email: ($("#custEmail").value || "").trim(),
+      street: ($("#custStreet").value || "").trim(),
+      city: ($("#custCity").value || "").trim(),
+      region: ($("#custRegion").value || "").trim(),
+      postal: ($("#custPostal").value || "").trim(),
+    };
     readOpenings();
     $("#pitchOut").textContent = `${state.pitch} / 12`;
+    $("#saltboxPeakOut").textContent = `${Math.round(saltboxFrac() * 100)}%`;
     togglePitchField();
     renderAll();
   }
@@ -1426,6 +1597,14 @@
     if (typeof state.camYaw !== "number") state.camYaw = -0.6;
     if (typeof state.camPitch !== "number") state.camPitch = 0.5;
     if (typeof state.roofCovering !== "string") state.roofCovering = "asphalt";
+    if (typeof state.saltboxPeak !== "number") state.saltboxPeak = 0.4;
+    if (!state.customer || typeof state.customer !== "object") {
+      state.customer = { name: "", phone: "", email: "", street: "", city: "", region: "", postal: "" };
+    }
+    if (!state.plan || typeof state.plan !== "object") state.plan = { startDate: "", hoursPerDay: 6, phases: {} };
+    if (typeof state.plan.hoursPerDay !== "number" || state.plan.hoursPerDay <= 0) state.plan.hoursPerDay = 6;
+    if (typeof state.plan.startDate !== "string") state.plan.startDate = "";
+    if (!state.plan.phases || typeof state.plan.phases !== "object") state.plan.phases = {};
   }
 
   function readOpenings() {
@@ -1487,14 +1666,26 @@
     if ($("#roofCovering")) $("#roofCovering").value = state.roofCovering || "asphalt";
     $("#pitch").value = state.pitch;
     $("#pitchOut").textContent = `${state.pitch} / 12`;
+    $("#saltboxPeak").value = Math.round(saltboxFrac() * 100);
+    $("#saltboxPeakOut").textContent = `${Math.round(saltboxFrac() * 100)}%`;
     $("#overhang").value = round(dispSmall(state.overhang), state.units === "metric" ? 1 : 0);
     $("#width").value = round(dispLen(state.width), 2);
     $("#depth").value = round(dispLen(state.depth), 2);
     $("#wallHeight").value = round(dispLen(state.wallHeight), 2);
     $("#spacing").value = state.spacing;
     $("#lumber").value = state.lumber;
+    const c = state.customer || {};
+    if ($("#custName")) $("#custName").value = c.name || "";
+    if ($("#custPhone")) $("#custPhone").value = c.phone || "";
+    if ($("#custEmail")) $("#custEmail").value = c.email || "";
+    if ($("#custStreet")) $("#custStreet").value = c.street || "";
+    if ($("#custCity")) $("#custCity").value = c.city || "";
+    if ($("#custRegion")) $("#custRegion").value = c.region || "";
+    if ($("#custPostal")) $("#custPostal").value = c.postal || "";
     if ($("#addrInput")) $("#addrInput").value = state.address || "";
     if ($("#zipInput")) $("#zipInput").value = state.zip || "";
+    if ($("#planStart")) $("#planStart").value = state.plan.startDate || "";
+    if ($("#planHpd")) $("#planHpd").value = state.plan.hoursPerDay || 6;
     renderOpenings();
     renderMap();
     togglePitchField();
@@ -1503,6 +1694,7 @@
   function togglePitchField() {
     const hide = state.roofType === "flat" || state.roofType === "gambrel";
     $("#pitchField").style.display = hide ? "none" : "";
+    $("#saltboxPeakField").style.display = state.roofType === "saltbox" ? "" : "none";
   }
 
   function setUnitLabels() {
@@ -1519,15 +1711,14 @@
   }
 
   /* ---------- Tabs & views ---------- */
+  function selectTab(name) {
+    $$(".tab").forEach((x) => x.classList.toggle("active", x.dataset.tab === name));
+    $$(".tab-panel").forEach((x) => x.classList.remove("active"));
+    const panel = $("#tab-" + name);
+    if (panel) panel.classList.add("active");
+  }
   function initTabs() {
-    $$(".tab").forEach((t) =>
-      t.addEventListener("click", () => {
-        $$(".tab").forEach((x) => x.classList.remove("active"));
-        $$(".tab-panel").forEach((x) => x.classList.remove("active"));
-        t.classList.add("active");
-        $("#tab-" + t.dataset.tab).classList.add("active");
-      })
-    );
+    $$(".tab").forEach((t) => t.addEventListener("click", () => selectTab(t.dataset.tab)));
     $$(".view-btn").forEach((v) =>
       v.addEventListener("click", () => {
         $$(".view-btn").forEach((x) => x.classList.remove("active"));
@@ -1640,14 +1831,16 @@
   }
 
   /* ---------- Wizard ---------- */
-  const wiz = { step: 0, max: 4, draft: {} };
+  const wiz = { step: 0, max: 5, draft: {} };
   function startWizard(fresh) {
     if (fresh) {
       Object.assign(state, {
-        id: null, name: "", roofType: "gable", pitch: 4, overhang: 12,
+        id: null, name: "", roofType: "gable", pitch: 4, saltboxPeak: 0.4, overhang: 12,
         width: 8, depth: 10, wallHeight: 7, spacing: 16, lumber: "2x4",
         doors: [{ type: "single", wall: "front", pos: "center", w: 3, h: 6.5 }],
         windows: [{ wall: "left", pos: "center", w: 2, h: 2 }],
+        customer: { name: "", phone: "", email: "", street: "", city: "", region: "", postal: "" },
+        plan: { startDate: "", hoursPerDay: 6, phases: {} },
         photos: {},
       });
     }
@@ -1663,6 +1856,14 @@
     $("#wizWallHeight").value = round(dispLen(state.wallHeight), 2);
     $("#wizPitch").value = state.pitch;
     $("#wizPitchOut").textContent = `${state.pitch} / 12`;
+    const c = state.customer || {};
+    $("#wizCustName").value = c.name || "";
+    $("#wizCustPhone").value = c.phone || "";
+    $("#wizCustEmail").value = c.email || "";
+    $("#wizCustStreet").value = c.street || "";
+    $("#wizCustCity").value = c.city || "";
+    $("#wizCustRegion").value = c.region || "";
+    $("#wizCustPostal").value = c.postal || "";
     syncWizardChoices();
     showWizStep(0);
     openOverlay("#wizard");
@@ -1709,6 +1910,15 @@
       state.width = toFtU(parseFloat($("#wizWidth").value) || 8);
       state.depth = toFtU(parseFloat($("#wizDepth").value) || 10);
       state.wallHeight = toFtU(parseFloat($("#wizWallHeight").value) || 7);
+      state.customer = {
+        name: ($("#wizCustName").value || "").trim(),
+        phone: ($("#wizCustPhone").value || "").trim(),
+        email: ($("#wizCustEmail").value || "").trim(),
+        street: ($("#wizCustStreet").value || "").trim(),
+        city: ($("#wizCustCity").value || "").trim(),
+        region: ($("#wizCustRegion").value || "").trim(),
+        postal: ($("#wizCustPostal").value || "").trim(),
+      };
       if (!state.name) state.name = defaultName();
       state.id = null; // new design
       $$(".unit-btn").forEach((b) => b.classList.toggle("active", b.dataset.unit === state.units));
@@ -1829,7 +2039,7 @@
       panel.hidden ? open() : close();
     });
     // close when picking a menu action, or clicking outside, or pressing Escape
-    ["#newBtn", "#designsBtn", "#drawingsBtn", "#saveBtn", "#printBtn"].forEach((sel) => {
+    ["#newBtn", "#planBtn", "#designsBtn", "#drawingsBtn", "#saveBtn", "#printBtn"].forEach((sel) => {
       const el = $(sel);
       if (el) el.addEventListener("click", close);
     });
@@ -1868,6 +2078,15 @@
     $("#windowList").addEventListener("click", onDelete);
     $("#buildSteps").addEventListener("change", onStepPhoto);
     $("#buildSteps").addEventListener("click", onStepPhotoDelete);
+    const planTable = $("#planTable");
+    if (planTable) {
+      planTable.addEventListener("input", onPlanTableInput);
+      planTable.addEventListener("change", onPlanTableInput);
+    }
+    const planStart = $("#planStart");
+    if (planStart) planStart.addEventListener("change", (e) => { state.plan.startDate = e.target.value || ""; renderPlanChart(buildPlan()); });
+    const planHpd = $("#planHpd");
+    if (planHpd) planHpd.addEventListener("input", (e) => { state.plan.hoursPerDay = Math.max(1, Number(e.target.value) || 6); renderPlanChart(buildPlan()); });
     const findBtn = $("#findAddr");
     if (findBtn) findBtn.addEventListener("click", geocode);
     const addrInput = $("#addrInput");
@@ -1896,6 +2115,7 @@
     $("#saveBtn").addEventListener("click", saveCurrent);
     $("#designsBtn").addEventListener("click", openDesigns);
     $("#newBtn").addEventListener("click", () => startWizard(true));
+    $("#planBtn").addEventListener("click", () => selectTab("plan"));
     $("#drawingsBtn").addEventListener("click", openDrawings);
     $("#drawingsClose").addEventListener("click", () => closeOverlay("#drawings"));
     initMenu();

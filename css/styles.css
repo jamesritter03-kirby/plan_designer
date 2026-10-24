@@ -462,6 +462,25 @@ select {
 .zip-field input { width: 120px; }
 .zip-note { font-size: 12px; color: var(--muted); }
 
+/* Project plan / schedule */
+.plan-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+.plan-controls .field { display: grid; gap: 4px; }
+.plan-controls .field > span { font-size: 12px; color: var(--muted); }
+.plan-controls input { min-height: 44px; padding: 10px 12px; font-size: 16px; background: var(--surface-2); border: 1px solid var(--line); color: var(--text); border-radius: 10px; }
+.plan-table { width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 8px; }
+.plan-table th, .plan-table td { border: 1px solid var(--line); padding: 7px 8px; text-align: left; }
+.plan-table th { background: var(--surface-2); font-size: 12px; color: var(--muted); font-weight: 700; }
+.plan-table .pl-name { font-weight: 600; }
+.plan-table .pl-mid { text-align: center; }
+.plan-table .pl-in { width: 100%; min-width: 56px; min-height: 38px; padding: 6px 8px; font-size: 15px; background: var(--surface-2); border: 1px solid var(--line); color: var(--text); border-radius: 8px; text-align: center; }
+.plan-table input[type="checkbox"] { width: 20px; height: 20px; }
+.plan-table .pl-done .pl-name { color: var(--good); }
+.plan-table .pl-total td { background: var(--surface-2); font-weight: 700; }
+.gantt-wrap { margin-top: 16px; }
+.plan-h { margin: 0 0 8px; font-size: 15px; }
+.gantt { border: 1px solid var(--line); border-radius: 12px; padding: 8px; background: #fff; overflow-x: auto; }
+.gantt-svg { width: 100%; height: auto; display: block; min-width: 320px; }
+
 /* Print-only: all three elevations together */
 .print-views { display: none; }
 .view-box { border: 1px solid var(--line); border-radius: 12px; margin-bottom: 10px; padding: 8px; background: #fff; }
@@ -535,7 +554,9 @@ select {
 .wiz-step.active { display: block; animation: fade 0.2s ease; }
 .wiz-step h2 { margin: 0 0 4px; font-size: 22px; }
 .wiz-sub { margin: 0 0 18px; color: var(--muted); font-size: 14px; }
-.wiz-step input[type="text"] {
+.wiz-step input[type="text"],
+.wiz-step input[type="tel"],
+.wiz-step input[type="email"] {
   width: 100%;
   background: var(--surface-2);
   border: 1px solid var(--line);
@@ -545,6 +566,7 @@ select {
   font-size: 17px;
   min-height: 48px;
 }
+.wiz-row { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 10px; }
 
 .choice-row { display: flex; gap: 8px; }
 .choice-row.wrap { flex-wrap: wrap; }
@@ -722,4 +744,8 @@ select {
   .view-box, .preview-card, .group, fieldset, .step, .op-card, .row { break-inside: avoid; page-break-inside: avoid; }
   .group, fieldset, .step, .op-card, .view-box { border-color: #999; background: #fff; color: #000; }
   .group h3, .summary-strip .chip, .step-num, .step-tag, .group h3 .count { background: #eee; color: #000; }
+  .plan-table, .gantt, .plan-controls { break-inside: avoid; page-break-inside: avoid; }
+  .plan-table th { background: #eee; color: #000; }
+  .plan-table .pl-in, .plan-controls input { border-color: #999; background: #fff; color: #000; }
+  .gantt { border-color: #999; background: #fff; overflow: visible; }
 }

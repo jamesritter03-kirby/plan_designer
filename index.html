@@ -10,7 +10,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>Planner</title>
-  <link rel="stylesheet" href="css/styles.css?v=1.6.2" />
+  <link rel="stylesheet" href="css/styles.css?v=1.7.0" />
 </head>
 <body>
   <header class="app-header">
@@ -31,6 +31,7 @@
             <button type="button" id="themeBtn" class="icon-btn" aria-label="Toggle light or dark theme">🌙</button>
           </div>
           <button type="button" id="newBtn" class="menu-item" role="menuitem">＋ New design</button>
+          <button type="button" id="planBtn" class="menu-item" role="menuitem">📅 Project plan</button>
           <button type="button" id="designsBtn" class="menu-item" role="menuitem">📁 Saved designs</button>
           <button type="button" id="drawingsBtn" class="menu-item" role="menuitem">📐 Drawing package</button>
           <button type="button" id="saveBtn" class="menu-item" role="menuitem">💾 Save design</button>
@@ -45,6 +46,7 @@
     <button class="tab" data-tab="shopping" role="tab">List</button>
     <button class="tab" data-tab="cuts" role="tab">Cut Sheet</button>
     <button class="tab" data-tab="steps" role="tab">Steps</button>
+    <button class="tab" data-tab="plan" role="tab">Plan</button>
   </nav>
 
   <main>
@@ -95,6 +97,13 @@
             <div class="slider-row">
               <input type="range" id="pitch" min="0" max="12" step="0.5" value="4" />
               <output id="pitchOut">4 / 12</output>
+            </div>
+          </label>
+          <label class="field" id="saltboxPeakField">
+            <span>Peak position (% from front)</span>
+            <div class="slider-row">
+              <input type="range" id="saltboxPeak" min="15" max="85" step="5" value="40" />
+              <output id="saltboxPeakOut">40%</output>
             </div>
           </label>
           <label class="field">
@@ -151,6 +160,38 @@
         </fieldset>
 
         <fieldset>
+          <legend>Customer</legend>
+          <label class="field">
+            <span>Name</span>
+            <input type="text" id="custName" placeholder="e.g. Jane Smith" autocomplete="name" />
+          </label>
+          <label class="field">
+            <span>Phone</span>
+            <input type="tel" id="custPhone" placeholder="e.g. (555) 123-4567" autocomplete="tel" inputmode="tel" />
+          </label>
+          <label class="field">
+            <span>Email</span>
+            <input type="email" id="custEmail" placeholder="e.g. jane@example.com" autocomplete="email" inputmode="email" />
+          </label>
+          <label class="field">
+            <span>Street address</span>
+            <input type="text" id="custStreet" placeholder="123 Main St" autocomplete="address-line1" />
+          </label>
+          <label class="field">
+            <span>City</span>
+            <input type="text" id="custCity" placeholder="City" autocomplete="address-level2" />
+          </label>
+          <label class="field">
+            <span>State / Province</span>
+            <input type="text" id="custRegion" placeholder="State" autocomplete="address-level1" />
+          </label>
+          <label class="field">
+            <span>ZIP / Postal code</span>
+            <input type="text" id="custPostal" placeholder="ZIP" autocomplete="postal-code" />
+          </label>
+        </fieldset>
+
+        <fieldset>
           <legend>Location</legend>
           <label class="field">
             <span>Address (for map &amp; local pricing)</span>
@@ -199,6 +240,31 @@
       <p class="disclaimer">
         A general build order for a stick-framed shed. Follow local codes and the
         manufacturer instructions for any hardware, roofing, door and windows.
+      </p>
+    </section>
+
+    <!-- PROJECT PLAN TAB -->
+    <section id="tab-plan" class="tab-panel" data-title="Project Plan">
+      <div class="summary-strip" id="planSummary"></div>
+      <div class="plan-controls">
+        <label class="field">
+          <span>Planned start date</span>
+          <input type="date" id="planStart" />
+        </label>
+        <label class="field">
+          <span>Work hours / day</span>
+          <input type="number" id="planHpd" min="1" max="24" step="0.5" value="6" inputmode="decimal" />
+        </label>
+      </div>
+      <div id="planTable"></div>
+      <div class="gantt-wrap">
+        <h3 class="plan-h">Schedule &mdash; Gantt</h3>
+        <div id="planGantt" class="gantt"></div>
+      </div>
+      <p class="disclaimer">
+        Durations are rough recommendations for a small DIY crew, scaled to your footprint.
+        Edit the estimated hours to match your pace, and log actual hours as you build.
+        Phases are charted back-to-back; overlap them in practice where it's safe.
       </p>
     </section>
   </main>
@@ -298,6 +364,42 @@
             </div>
           </label>
         </div>
+
+        <!-- Step 5: customer details -->
+        <div class="wiz-step" data-step="4">
+          <h2>Customer details</h2>
+          <p class="wiz-sub">Who is this plan for? Optional — add it for the title block.</p>
+          <label class="field">
+            <span>Name</span>
+            <input type="text" id="wizCustName" placeholder="e.g. Jane Smith" autocomplete="name" />
+          </label>
+          <label class="field">
+            <span>Phone</span>
+            <input type="tel" id="wizCustPhone" placeholder="e.g. (555) 123-4567" autocomplete="tel" inputmode="tel" />
+          </label>
+          <label class="field">
+            <span>Email</span>
+            <input type="email" id="wizCustEmail" placeholder="e.g. jane@example.com" autocomplete="email" inputmode="email" />
+          </label>
+          <label class="field">
+            <span>Street address</span>
+            <input type="text" id="wizCustStreet" placeholder="123 Main St" autocomplete="address-line1" />
+          </label>
+          <div class="wiz-row">
+            <label class="field">
+              <span>City</span>
+              <input type="text" id="wizCustCity" placeholder="City" autocomplete="address-level2" />
+            </label>
+            <label class="field">
+              <span>State / Prov.</span>
+              <input type="text" id="wizCustRegion" placeholder="State" autocomplete="address-level1" />
+            </label>
+            <label class="field">
+              <span>ZIP / Postal</span>
+              <input type="text" id="wizCustPostal" placeholder="ZIP" autocomplete="postal-code" />
+            </label>
+          </div>
+        </div>
       </div>
 
       <div class="wizard-nav">
@@ -364,6 +466,6 @@
     </div>
   </div>
 
-  <script src="js/app.js?v=1.6.2"></script>
+  <script src="js/app.js?v=1.7.0"></script>
 </body>
 </html>
