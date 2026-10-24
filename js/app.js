@@ -814,15 +814,28 @@
     }
     faces.sort((a, b) => b.key - a.key); // draw far faces first
     let s = faces.map((f) => poly(f.verts, f.fill)).join("");
-    // front-wall openings, only when the front face points toward the camera
-    if (cosY > 0.02) {
-      layoutWall(W, wallOpenings("front")).forEach((op) => {
+    // openings on every wall, drawn only when that wall faces the camera
+    const drawWallOpenings = (wall) => {
+      const L = wall === "front" || wall === "back" ? W : D;
+      let out = "";
+      layoutWall(L, wallOpenings(wall)).forEach((op) => {
         const dh = op.kind === "door" ? Math.min(op.h, H * 0.95) : Math.min(op.h, H * 0.6);
         const z0 = op.kind === "door" ? 0 : H * 0.5 - dh / 2;
         const fill = op.kind === "door" ? C.door : "#bcd6e8";
-        s += poly([[op.left, 0, z0], [op.left + op.w, 0, z0], [op.left + op.w, 0, z0 + dh], [op.left, 0, z0 + dh]], fill);
+        const a = op.left, b = op.left + op.w;
+        let quad;
+        if (wall === "front") quad = [[a, 0, z0], [b, 0, z0], [b, 0, z0 + dh], [a, 0, z0 + dh]];
+        else if (wall === "back") quad = [[a, D, z0], [b, D, z0], [b, D, z0 + dh], [a, D, z0 + dh]];
+        else if (wall === "left") quad = [[0, a, z0], [0, b, z0], [0, b, z0 + dh], [0, a, z0 + dh]];
+        else quad = [[W, a, z0], [W, b, z0], [W, b, z0 + dh], [W, a, z0 + dh]];
+        out += poly(quad, fill);
       });
-    }
+      return out;
+    };
+    if (cosY > 0.001) s += drawWallOpenings("front");
+    if (cosY < -0.001) s += drawWallOpenings("back");
+    if (sinY > 0.001) s += drawWallOpenings("left");
+    if (sinY < -0.001) s += drawWallOpenings("right");
     s += `<text x="${vw / 2}" y="${vh - 6}" fill="${C.dim}" font-size="9" text-anchor="middle">drag to rotate · ${fmtLen(W)} × ${fmtLen(D)} × peak ${fmtLen(g.peakHeight)}</text>`;
     return svgWrap(s, vw, vh);
   }
