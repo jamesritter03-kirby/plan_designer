@@ -4,7 +4,7 @@
 
   const FT_PER_M = 3.280839895;
   const IN_PER_M = 39.3700787;
-  const APP_VERSION = "1.5.5";
+  const APP_VERSION = "1.5.6";
   const STORE_KEY = "shedPlanner.designs.v1";
   const SEEN_KEY = "shedPlanner.seen.v1";
   const THEME_KEY = "shedPlanner.theme.v1";
@@ -1460,10 +1460,13 @@
     toast("Opened “" + d.name + "”");
   }
   function deleteDesign(id) {
+    const d = loadDesigns().find((x) => x.id === id);
+    if (!confirm(`Delete “${d ? d.name : "this design"}”? This cannot be undone.`)) return;
     const list = loadDesigns().filter((x) => x.id !== id);
     persistDesigns(list);
     if (state.id === id) state.id = null;
     renderDesignsList();
+    toast("Design deleted");
   }
   const escapeHtml = (s) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
