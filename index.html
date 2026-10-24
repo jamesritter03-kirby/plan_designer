@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no"
+  />
+  <meta name="theme-color" content="#1b2a3a" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>Shed Planner</title>
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <header class="app-header">
+    <h1>🪵 Shed Planner</h1>
+    <div class="header-right">
+      <div class="unit-toggle" role="group" aria-label="Measurement units">
+        <button type="button" class="unit-btn active" data-unit="imperial">ft/in</button>
+        <button type="button" class="unit-btn" data-unit="metric">m</button>
+      </div>
+      <button type="button" id="designsBtn" class="icon-btn" aria-label="Saved designs">📁</button>
+    </div>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button class="tab active" data-tab="design" role="tab">Design</button>
+    <button class="tab" data-tab="shopping" role="tab">Shopping</button>
+    <button class="tab" data-tab="cuts" role="tab">Cut Sheet</button>
+  </nav>
+
+  <main>
+    <!-- DESIGN TAB -->
+    <section id="tab-design" class="tab-panel active">
+      <div class="preview-card">
+        <div class="preview-head">
+          <span>Live Preview</span>
+          <div class="view-toggle" role="group" aria-label="Preview view">
+            <button type="button" class="view-btn active" data-view="front">Front</button>
+            <button type="button" class="view-btn" data-view="side">Side</button>
+          </div>
+        </div>
+        <div id="preview" class="preview-stage"></div>
+        <p id="preview-caption" class="preview-caption"></p>
+      </div>
+
+      <form id="shed-form" class="form-grid" autocomplete="off">
+        <fieldset>
+          <legend>Roof</legend>
+          <label class="field">
+            <span>Roof type</span>
+            <select id="roofType">
+              <option value="gable">Gable (peak in middle)</option>
+              <option value="lean-to">Lean-to (mono-slope)</option>
+              <option value="saltbox">Saltbox (offset peak)</option>
+              <option value="gambrel">Gambrel (barn style)</option>
+              <option value="flat">Flat</option>
+            </select>
+          </label>
+          <label class="field" id="pitchField">
+            <span>Roof pitch (rise per 12)</span>
+            <div class="slider-row">
+              <input type="range" id="pitch" min="0" max="12" step="0.5" value="4" />
+              <output id="pitchOut">4 / 12</output>
+            </div>
+          </label>
+          <label class="field">
+            <span>Overhang (<em class="u-small">in</em>)</span>
+            <input type="number" id="overhang" value="12" min="0" step="1" inputmode="decimal" />
+          </label>
+        </fieldset>
+
+        <fieldset>
+          <legend>Footprint</legend>
+          <label class="field">
+            <span>Width (<em class="u-len">ft</em>)</span>
+            <input type="number" id="width" value="8" min="2" step="0.5" inputmode="decimal" />
+          </label>
+          <label class="field">
+            <span>Depth (<em class="u-len">ft</em>)</span>
+            <input type="number" id="depth" value="10" min="2" step="0.5" inputmode="decimal" />
+          </label>
+          <label class="field">
+            <span>Wall height (<em class="u-len">ft</em>)</span>
+            <input type="number" id="wallHeight" value="7" min="4" step="0.5" inputmode="decimal" />
+          </label>
+        </fieldset>
+
+        <fieldset>
+          <legend>Framing</legend>
+          <label class="field">
+            <span>Stud / joist spacing</span>
+            <select id="spacing">
+              <option value="16">16" on center</option>
+              <option value="24">24" on center</option>
+              <option value="12">12" on center</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Lumber size</span>
+            <select id="lumber">
+              <option value="2x4">2×4</option>
+              <option value="2x6">2×6</option>
+            </select>
+          </label>
+        </fieldset>
+
+        <fieldset>
+          <legend>Openings</legend>
+          <label class="field">
+            <span>Door width (<em class="u-len">ft</em>)</span>
+            <input type="number" id="doorWidth" value="3" min="0" step="0.5" inputmode="decimal" />
+          </label>
+          <label class="field">
+            <span>Door height (<em class="u-len">ft</em>)</span>
+            <input type="number" id="doorHeight" value="6.5" min="0" step="0.5" inputmode="decimal" />
+          </label>
+          <label class="field">
+            <span>Windows</span>
+            <input type="number" id="windows" value="1" min="0" step="1" inputmode="numeric" />
+          </label>
+        </fieldset>
+      </form>
+    </section>
+
+    <!-- SHOPPING TAB -->
+    <section id="tab-shopping" class="tab-panel">
+      <div class="summary-strip" id="shopSummary"></div>
+      <div id="shoppingList"></div>
+      <p class="disclaimer">
+        Estimates include standard framing only. Add ~10% for waste, plus fasteners,
+        hardware, roofing, paint and trim as needed. Verify against local building codes.
+      </p>
+    </section>
+
+    <!-- CUT SHEET TAB -->
+    <section id="tab-cuts" class="tab-panel">
+      <div class="summary-strip" id="cutSummary"></div>
+      <div id="cutSheet"></div>
+      <p class="disclaimer">
+        Angles are theoretical. Cut one test piece first. Lengths do not subtract
+        blade kerf or saw tolerances.
+      </p>
+    </section>
+  </main>
+
+  <footer class="actions">
+    <button type="button" id="saveBtn" class="btn-ghost">💾 Save</button>
+    <button type="button" id="printBtn" class="btn-primary">Print / PDF</button>
+  </footer>
+
+  <!-- WIZARD -->
+  <div id="wizard" class="overlay" aria-hidden="true">
+    <div class="sheet wizard-sheet" role="dialog" aria-modal="true" aria-labelledby="wizTitle">
+      <div class="wizard-progress"><span id="wizBar"></span></div>
+      <div class="wizard-body">
+        <!-- Step 1: welcome / name -->
+        <div class="wiz-step active" data-step="0">
+          <h2 id="wizTitle">Let's plan your shed</h2>
+          <p class="wiz-sub">Answer a few quick questions. You can fine-tune everything afterward.</p>
+          <label class="field">
+            <span>Name this design</span>
+            <input type="text" id="wizName" placeholder="e.g. Backyard Garden Shed" />
+          </label>
+          <label class="field">
+            <span>Measurement units</span>
+            <div class="choice-row" data-choice="units">
+              <button type="button" class="choice active" data-value="imperial">Feet / Inches</button>
+              <button type="button" class="choice" data-value="metric">Meters</button>
+            </div>
+          </label>
+          <label class="field">
+            <span>What's it for?</span>
+            <div class="choice-row wrap" data-choice="purpose">
+              <button type="button" class="choice active" data-value="storage">Storage</button>
+              <button type="button" class="choice" data-value="garden">Garden</button>
+              <button type="button" class="choice" data-value="workshop">Workshop</button>
+              <button type="button" class="choice" data-value="bike">Bikes/Tools</button>
+            </div>
+          </label>
+        </div>
+
+        <!-- Step 2: roof style -->
+        <div class="wiz-step" data-step="1">
+          <h2>Pick a roof style</h2>
+          <p class="wiz-sub">Tap a style — this sets the framing and cut angles.</p>
+          <div class="roof-cards" data-choice="roofType">
+            <button type="button" class="roof-card active" data-value="gable">
+              <svg viewBox="0 0 80 50"><polygon points="8,44 40,14 72,44" fill="none" stroke="currentColor" stroke-width="3"/><rect x="12" y="44" width="56" height="2" fill="currentColor"/></svg>
+              <b>Gable</b><small>Classic peak</small>
+            </button>
+            <button type="button" class="roof-card" data-value="lean-to">
+              <svg viewBox="0 0 80 50"><polyline points="8,44 8,20 72,38 72,44" fill="none" stroke="currentColor" stroke-width="3"/></svg>
+              <b>Lean-to</b><small>Single slope</small>
+            </button>
+            <button type="button" class="roof-card" data-value="saltbox">
+              <svg viewBox="0 0 80 50"><polyline points="8,44 8,30 50,12 72,44" fill="none" stroke="currentColor" stroke-width="3"/></svg>
+              <b>Saltbox</b><small>Offset peak</small>
+            </button>
+            <button type="button" class="roof-card" data-value="gambrel">
+              <svg viewBox="0 0 80 50"><polyline points="8,44 14,28 40,16 66,28 72,44" fill="none" stroke="currentColor" stroke-width="3"/></svg>
+              <b>Gambrel</b><small>Barn style</small>
+            </button>
+            <button type="button" class="roof-card" data-value="flat">
+              <svg viewBox="0 0 80 50"><rect x="8" y="22" width="64" height="4" fill="currentColor"/><line x1="8" y1="44" x2="8" y2="24" stroke="currentColor" stroke-width="3"/><line x1="72" y1="44" x2="72" y2="24" stroke="currentColor" stroke-width="3"/></svg>
+              <b>Flat</b><small>Low slope</small>
+            </button>
+          </div>
+        </div>
+
+        <!-- Step 3: size -->
+        <div class="wiz-step" data-step="2">
+          <h2>Overall size</h2>
+          <p class="wiz-sub">Rough footprint — adjust later if needed.</p>
+          <label class="field">
+            <span>Width (<em class="u-len">ft</em>)</span>
+            <input type="number" id="wizWidth" value="8" min="2" step="0.5" inputmode="decimal" />
+          </label>
+          <label class="field">
+            <span>Depth (<em class="u-len">ft</em>)</span>
+            <input type="number" id="wizDepth" value="10" min="2" step="0.5" inputmode="decimal" />
+          </label>
+          <label class="field">
+            <span>Wall height (<em class="u-len">ft</em>)</span>
+            <input type="number" id="wizWallHeight" value="7" min="4" step="0.5" inputmode="decimal" />
+          </label>
+        </div>
+
+        <!-- Step 4: roof detail + framing -->
+        <div class="wiz-step" data-step="3">
+          <h2>Roof slope & framing</h2>
+          <p class="wiz-sub">Steeper roofs shed water/snow better.</p>
+          <label class="field" id="wizPitchField">
+            <span>Roof pitch (rise per 12)</span>
+            <div class="slider-row">
+              <input type="range" id="wizPitch" min="1" max="12" step="0.5" value="4" />
+              <output id="wizPitchOut">4 / 12</output>
+            </div>
+          </label>
+          <label class="field">
+            <span>Stud / rafter spacing</span>
+            <div class="choice-row" data-choice="spacing">
+              <button type="button" class="choice" data-value="12">12"</button>
+              <button type="button" class="choice active" data-value="16">16"</button>
+              <button type="button" class="choice" data-value="24">24"</button>
+            </div>
+          </label>
+          <label class="field">
+            <span>Framing lumber</span>
+            <div class="choice-row" data-choice="lumber">
+              <button type="button" class="choice active" data-value="2x4">2×4</button>
+              <button type="button" class="choice" data-value="2x6">2×6</button>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <div class="wizard-nav">
+        <button type="button" id="wizBack" class="btn-ghost">Back</button>
+        <span id="wizDots" class="wiz-dots"></span>
+        <button type="button" id="wizNext" class="btn-primary">Next</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SAVED DESIGNS -->
+  <div id="designs" class="overlay" aria-hidden="true">
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="designsTitle">
+      <div class="sheet-head">
+        <h2 id="designsTitle">Saved Designs</h2>
+        <button type="button" id="designsClose" class="icon-btn" aria-label="Close">✕</button>
+      </div>
+      <div class="sheet-body">
+        <button type="button" id="newDesignBtn" class="btn-primary full">＋ New design (wizard)</button>
+        <div id="designsList" class="designs-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/app.js"></script>
+</body>
+</html>
