@@ -4,6 +4,7 @@
 
   const FT_PER_M = 3.280839895;
   const IN_PER_M = 39.3700787;
+  const APP_VERSION = "1.3.0";
   const STORE_KEY = "shedPlanner.designs.v1";
   const SEEN_KEY = "shedPlanner.seen.v1";
   const THEME_KEY = "shedPlanner.theme.v1";
@@ -15,6 +16,7 @@
     purpose: "storage",
     units: "imperial",
     roofType: "gable",
+    roofCovering: "asphalt",
     pitch: 4,
     overhang: 12, // inches
     width: 8, // ft
@@ -25,6 +27,13 @@
     // openings: each has its own size, wall and position
     doors: [{ type: "single", wall: "front", pos: "center", w: 3, h: 6.5 }],
     windows: [{ wall: "left", pos: "center", w: 2, h: 2 }],
+    photos: {}, // build-step photos keyed by step title (data URLs)
+    address: "",
+    lat: null,
+    lon: null,
+    zip: "",
+    camYaw: -0.6, // 3D orbit angles (radians)
+    camPitch: 0.5,
     view: "front",
   };
 
@@ -244,7 +253,7 @@
     groups.push({
       title: "Weatherproofing & hardware",
       items: [
-        { label: `Roofing — shingles or metal`, sub: `cover roof area`, qty: `≈ ${Math.ceil(roofArea)} sq ft` },
+        { label: `Roofing — ${roofCover().label.toLowerCase()}`, sub: `cover roof area`, qty: `≈ ${Math.ceil(roofArea)} sq ft` },
         { label: `Roofing felt / underlayment`, sub: `under roofing`, qty: `≈ ${Math.ceil(roofArea)} sq ft` },
         { label: `House wrap`, sub: `walls`, qty: `≈ ${Math.ceil(perim * H)} sq ft` },
         ...state.doors.map((d) => ({ label: `Door — ${DOOR_LABELS[d.type]}`, sub: `${fmtLen(d.w)} × ${fmtLen(d.h)} · ${d.wall} wall, ${d.pos}`, qty: `1` })),
@@ -265,6 +274,123 @@
     g.rafters.forEach((r) => (planeWidthTotal += r.length));
     // one of each listed rafter represents one plane width
     return planeWidthTotal * coverDepth;
+  }
+
+  // Rough per-store unit prices (USD). Lumber per linear ft; sheets each; areas per sq ft.
+  const PRICES = {
+    "Lowe's": { "2x4": 0.72, "2x6": 1.18, "2x8": 1.75, "4x4": 2.7, "1x6": 1.85, plyDeck: 52, osb: 23, roofing: 1.7, felt: 0.18, wrap: 0.28, door: 170, window: 130, hardware: 70 },
+    "Home Depot": { "2x4": 0.7, "2x6": 1.15, "2x8": 1.72, "4x4": 2.65, "1x6": 1.8, plyDeck: 50, osb: 22, roofing: 1.65, felt: 0.17, wrap: 0.27, door: 165, window: 125, hardware: 68 },
+    "McCoy's": { "2x4": 0.66, "2x6": 1.08, "2x8": 1.62, "4x4": 2.5, "1x6": 1.72, plyDeck: 48, osb: 21, roofing: 1.6, felt: 0.16, wrap: 0.26, door: 160, window: 120, hardware: 65 },
+  };
+
+  // Roof covering options: price multiplier on the base roofing cost + display label.
+  const ROOF_COVER = {
+    asphalt: { label: "Asphalt shingles", mult: 1.0 },
+    metal: { label: "Metal panels", mult: 1.9 },
+    wood: { label: "Wood shingles / shakes", mult: 2.4 },
+    corrugated: { label: "Corrugated / polycarbonate", mult: 1.5 },
+    rolled: { label: "Rolled roofing", mult: 0.7 },
+    rubber: { label: "EPDM rubber", mult: 1.6 },
+  };
+  function roofCover() {
+    return ROOF_COVER[state.roofCovering] || ROOF_COVER.asphalt;
+  }
+
+  function estimate(g, perim, roofArea) {
+    const mult = zipMultiplier(state.zip).mult;
+    const coverMult = roofCover().mult;
+    const W = state.width, D = state.depth, H = state.wallHeight, oh = state.overhang / 12;
+    const lum = state.lumber;
+    const floorJoists = Math.floor((D * 12) / state.spacing) + 1;
+    const skids = Math.max(2, Math.floor((W * 12) / 24) + 1);
+    const studs = studsForWall(W) * 2 + studsForWall(D) * 2 + 3 + state.doors.length * 4 + state.windows.length * 6;
+    const ft = { "2x4": 0, "2x6": 0, "2x8": 0, "4x4": 0, "1x6": 0 };
+    ft["4x4"] += skids * D;
+    ft["2x6"] += floorJoists * W + 2 * D;
+    ft[lum] += perim + 2 * perim + studs * H;
+    ft["2x6"] += state.doors.reduce((a, d) => a + (d.w + 0.5) * 2, 0) + state.windows.reduce((a, w) => a + (w.w + 0.5) * 2, 0);
+    g.rafters.forEach((r) => (ft[lum] += r.qty * r.length));
+    if (state.roofType === "gable" || state.roofType === "saltbox") {
+      ft["2x8"] += D;
+      ft[lum] += raftersPerSide() * (W / 2);
+    }
+    ft["1x6"] += 2 * (D + oh * 2);
+    const plyDeck = Math.ceil((W * D) / 32);
+    const osb = Math.ceil((perim * H) / 32) + Math.ceil(roofArea / 32);
+    const wallArea = perim * H;
+    return Object.keys(PRICES).map((store) => {
+      const p = PRICES[store];
+      let t = 0;
+      for (const s in ft) t += ft[s] * p[s];
+      t += plyDeck * p.plyDeck + osb * p.osb;
+      t += roofArea * p.roofing * coverMult + roofArea * p.felt + wallArea * p.wrap;
+      t += state.doors.length * p.door + state.windows.length * p.window + p.hardware;
+      return { store, total: Math.round(t * mult) };
+    });
+  }
+
+  // Rough regional cost multiplier from US ZIP leading digit (materials + freight).
+  function zipMultiplier(zip) {
+    if (!/^\d{5}$/.test(zip || "")) return { mult: 1, label: "US average" };
+    const d = zip[0];
+    const map = { "0": 1.18, "1": 1.12, "2": 1.05, "3": 0.98, "4": 0.97, "5": 1.0, "6": 0.96, "7": 0.95, "8": 1.06, "9": 1.15 };
+    const region = {
+      "0": "Northeast", "1": "Northeast", "2": "Mid-Atlantic", "3": "Southeast", "4": "Midwest",
+      "5": "Upper Midwest", "6": "Central Plains", "7": "South Central", "8": "Mountain West", "9": "West Coast",
+    };
+    return { mult: map[d] || 1, label: region[d] || "US" };
+  }
+
+  // Render the static map (also prints) from resolved coordinates.
+  function renderMap() {
+    const box = $("#mapBox");
+    if (!box) return;
+    if (state.lat == null || state.lon == null) {
+      box.innerHTML = state.address
+        ? `<p class="map-hint">Tap “Find on map” to locate “${escapeHtml(state.address)}”.</p>`
+        : `<p class="map-hint">Enter an address to show a map and local pricing.</p>`;
+      return;
+    }
+    const lat = state.lat, lon = state.lon;
+    const img = `https://staticmap.openstreetmap.de/staticmap.php?center=${lat},${lon}&zoom=16&size=600x300&markers=${lat},${lon},red-pushpin`;
+    const osm = `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=16/${lat}/${lon}`;
+    box.innerHTML =
+      `<img class="map-img" src="${img}" alt="Map of build location" loading="lazy" />` +
+      `<p class="map-addr">📍 ${escapeHtml(state.address)}</p>` +
+      `<a class="map-link" href="${osm}" target="_blank" rel="noopener">View on OpenStreetMap ↗</a>`;
+  }
+
+  // Geocode the address with OpenStreetMap Nominatim (keyless) → lat/lon + ZIP.
+  async function geocode() {
+    const q = ($("#addrInput").value || "").trim();
+    state.address = q;
+    if (!q) { state.lat = state.lon = null; renderMap(); return; }
+    const btn = $("#findAddr");
+    if (btn) { btn.disabled = true; btn.textContent = "Searching…"; }
+    try {
+      const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=1&q=${encodeURIComponent(q)}`;
+      const res = await fetch(url, { headers: { "Accept": "application/json" } });
+      const data = await res.json();
+      if (!data.length) { toast("Address not found"); renderMap(); return; }
+      const hit = data[0];
+      state.lat = parseFloat(hit.lat);
+      state.lon = parseFloat(hit.lon);
+      state.address = hit.display_name || q;
+      const pc = hit.address && hit.address.postcode ? String(hit.address.postcode).match(/\d{5}/) : null;
+      if (pc) {
+        state.zip = pc[0];
+        const zi = $("#zipInput"); if (zi) zi.value = state.zip;
+      }
+      $("#addrInput").value = state.address;
+      renderMap();
+      renderShopping();
+    } catch (err) {
+      console.warn("Geocode failed:", err);
+      toast("Could not reach map service");
+      renderMap();
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = "📍 Find on map"; }
+    }
   }
 
   /* ---------- Cut sheet ---------- */
@@ -323,12 +449,31 @@
     C.gap = light ? "#f4f7fb" : "#0d1524";
     C.stud = light ? "#caa96b" : "#e0cda4";
     const g = geometry();
-    const svg = state.view === "front" ? frontElevation(g) : state.view === "side" ? sideElevation(g) : topView(g);
+    const svg = state.view === "front" ? frontElevation(g) : state.view === "side" ? sideElevation(g) : state.view === "top" ? topView(g) : threeDView(g);
     stage.innerHTML = svg;
+    stage.classList.toggle("rotatable", state.view === "3d");
     const roofNames = { gable: "Gable", "lean-to": "Lean-to", saltbox: "Saltbox", gambrel: "Gambrel", flat: "Flat" };
     $("#preview-caption").textContent =
       `${roofNames[state.roofType]} · ${fmtLen(state.width)} W × ${fmtLen(state.depth)} D · ` +
       `walls ${fmtLen(state.wallHeight)} · peak ${fmtLen(g.peakHeight)}`;
+    renderPrintViews(g);
+  }
+
+  // Print-only: render all three elevations together, always in legible light colors.
+  function renderPrintViews(g) {
+    const host = $("#printViews");
+    if (!host) return;
+    const savedDim = C.dim, savedGap = C.gap, savedStud = C.stud;
+    C.dim = "#51607a"; C.gap = "#f4f7fb"; C.stud = "#caa96b";
+    const views = [
+      ["Front elevation", frontElevation(g)],
+      ["Side elevation (left)", sideElevation(g)],
+      ["Top (plan) view", topView(g)],
+    ];
+    C.dim = savedDim; C.gap = savedGap; C.stud = savedStud;
+    host.innerHTML = views
+      .map(([label, svg]) => `<div class="view-box"><div class="view-label">${label}</div>${svg}</div>`)
+      .join("");
   }
 
   function svgWrap(inner, vw, vh) {
@@ -597,6 +742,70 @@
     return svgWrap(s, vw, vh);
   }
 
+  // Front-wall profile (X,Z) used by the 3D view, varies by roof type.
+  function frontProfile(g) {
+    const W = state.width, H = state.wallHeight, peak = g.peakHeight;
+    if (state.roofType === "gable") return [{ x: 0, z: 0 }, { x: 0, z: H }, { x: W / 2, z: peak }, { x: W, z: H }, { x: W, z: 0 }];
+    if (state.roofType === "lean-to") return [{ x: 0, z: 0 }, { x: 0, z: peak }, { x: W, z: H }, { x: W, z: 0 }];
+    if (state.roofType === "saltbox") return [{ x: 0, z: 0 }, { x: 0, z: H }, { x: W * 0.4, z: peak }, { x: W, z: H }, { x: W, z: 0 }];
+    if (state.roofType === "gambrel") {
+      const R = W / 2, knee = g.kneeHeight, kx1 = W / 2 - R * Math.cos(Math.PI / 4), kx2 = W / 2 + R * Math.cos(Math.PI / 4);
+      return [{ x: 0, z: 0 }, { x: 0, z: H }, { x: kx1, z: knee }, { x: W / 2, z: peak }, { x: kx2, z: knee }, { x: W, z: H }, { x: W, z: 0 }];
+    }
+    return [{ x: 0, z: 0 }, { x: 0, z: H }, { x: W, z: peak }, { x: W, z: 0 }]; // flat (slight slope)
+  }
+
+  function threeDView(g) {
+    const vw = 320, vh = 240, pad = 30;
+    const W = state.width, D = state.depth, H = state.wallHeight;
+    const prof = frontProfile(g);
+    const cx = W / 2, cy = D / 2;
+    const cosY = Math.cos(state.camYaw), sinY = Math.sin(state.camYaw);
+    const cosP = Math.cos(state.camPitch), sinP = Math.sin(state.camPitch);
+    // orbit camera: yaw about the vertical axis, pitch = elevation
+    const proj = (X, Y, Z) => {
+      const x = X - cx, y = Y - cy, z = Z;
+      const Xr = x * cosY - y * sinY;
+      const Yr = x * sinY + y * cosY;
+      return { x: Xr, y: Yr * sinP - z * cosP, depth: Yr * cosP + z * sinP };
+    };
+    const corners = [];
+    prof.forEach((p) => { corners.push(proj(p.x, 0, p.z)); corners.push(proj(p.x, D, p.z)); });
+    const minX = Math.min(...corners.map((p) => p.x)), maxX = Math.max(...corners.map((p) => p.x));
+    const minY = Math.min(...corners.map((p) => p.y)), maxY = Math.max(...corners.map((p) => p.y));
+    const scale = Math.min((vw - pad * 2) / (maxX - minX || 1), (vh - pad * 2) / (maxY - minY || 1));
+    const ox = pad - minX * scale, oy = pad - minY * scale;
+    const S = (v) => { const q = proj(v[0], v[1], v[2]); return `${(ox + q.x * scale).toFixed(1)},${(oy + q.y * scale).toFixed(1)}`; };
+    const poly = (verts, fill) => `<polygon points="${verts.map(S).join(" ")}" fill="${fill}" stroke="${C.line}" stroke-width="1.4" stroke-linejoin="round"/>`;
+    const faces = [];
+    const addFace = (verts, fill) => {
+      const c = verts.reduce((acc, v) => [acc[0] + v[0], acc[1] + v[1], acc[2] + v[2]], [0, 0, 0]).map((n) => n / verts.length);
+      faces.push({ verts, fill, key: proj(c[0], c[1], c[2]).depth }); // larger depth = farther
+    };
+    addFace(prof.map((p) => [p.x, 0, p.z]), C.wall); // front gable cap
+    addFace(prof.map((p) => [p.x, D, p.z]), C.wall2); // back cap
+    for (let i = 0; i < prof.length; i++) {
+      const p0 = prof[i], p1 = prof[(i + 1) % prof.length];
+      if (p0.z === 0 && p1.z === 0) continue; // skip floor
+      const vertical = Math.abs(p0.x - p1.x) < 1e-6;
+      const fill = vertical ? C.wall2 : (p0.x + p1.x) / 2 > W / 2 ? "#3d87b4" : C.roof;
+      addFace([[p0.x, 0, p0.z], [p1.x, 0, p1.z], [p1.x, D, p1.z], [p0.x, D, p0.z]], fill);
+    }
+    faces.sort((a, b) => b.key - a.key); // draw far faces first
+    let s = faces.map((f) => poly(f.verts, f.fill)).join("");
+    // front-wall openings, only when the front face points toward the camera
+    if (cosY > 0.02) {
+      layoutWall(W, wallOpenings("front")).forEach((op) => {
+        const dh = op.kind === "door" ? Math.min(op.h, H * 0.95) : Math.min(op.h, H * 0.6);
+        const z0 = op.kind === "door" ? 0 : H * 0.5 - dh / 2;
+        const fill = op.kind === "door" ? C.door : "#bcd6e8";
+        s += poly([[op.left, 0, z0], [op.left + op.w, 0, z0], [op.left + op.w, 0, z0 + dh], [op.left, 0, z0 + dh]], fill);
+      });
+    }
+    s += `<text x="${vw / 2}" y="${vh - 6}" fill="${C.dim}" font-size="9" text-anchor="middle">drag to rotate · ${fmtLen(W)} × ${fmtLen(D)} × peak ${fmtLen(g.peakHeight)}</text>`;
+    return svgWrap(s, vw, vh);
+  }
+
   function dimLineH(x1, x2, y, label, scale) {
     return `<line x1="${x1}" y1="${y}" x2="${x2}" y2="${y}" stroke="${C.dim}" stroke-width="1"/>` +
       `<line x1="${x1}" y1="${y - 4}" x2="${x1}" y2="${y + 4}" stroke="${C.dim}" stroke-width="1"/>` +
@@ -612,12 +821,22 @@
 
   /* ---------- Render lists ---------- */
   function renderShopping() {
-    const { groups, perim, roofArea } = materials();
+    const { groups, g, perim, roofArea } = materials();
     const totalBoards = groups.reduce((a, gr) => a + gr.items.length, 0);
+    const region = zipMultiplier(state.zip);
+    const est = estimate(g, perim, roofArea);
+    const regionSub = /^\d{5}$/.test(state.zip) ? `ZIP ${state.zip} · ${region.label}` : "US average — add ZIP/address for local pricing";
+    groups.unshift({
+      title: "Cost estimate (materials only)",
+      items: est.map((r) => ({ label: r.store, sub: regionSub, qty: "$" + r.total.toLocaleString() })),
+    });
+    const cheapest = Math.min(...est.map((r) => r.total));
     $("#shopSummary").innerHTML =
       chip(fmtLen(state.width) + "×" + fmtLen(state.depth), "footprint") +
       chip(Math.ceil(roofArea) + (state.units === "metric" ? "" : " ft²"), "roof area") +
-      chip(totalBoards, "line items");
+      chip("$" + cheapest.toLocaleString(), "est. from");
+    const zipNote = $("#zipNote");
+    if (zipNote) zipNote.textContent = regionSub;
     $("#shoppingList").innerHTML = groups.map(groupHtml).join("");
   }
 
@@ -732,7 +951,7 @@
     steps.push({
       tag: "Finish",
       title: "Roofing",
-      body: `Install shingles or metal roofing from the eave up, following the manufacturer's overlap and fastener pattern.`,
+      body: `Install ${roofCover().label.toLowerCase()} from the eave up, following the manufacturer's overlap and fastener pattern.`,
     });
     steps.push({
       tag: "Finish",
@@ -751,16 +970,58 @@
   function renderSteps() {
     const steps = buildSteps();
     const roofStep = steps.filter((s) => s.tag === "Roof").length;
+    const withPhotos = steps.filter((s) => state.photos[s.title]).length;
     $("#stepsSummary").innerHTML =
       chip(steps.length, "steps") +
-      chip(roofStep, "roof steps") +
+      chip(withPhotos, "photos") +
       chip({ gable: "Gable", "lean-to": "Lean-to", saltbox: "Saltbox", gambrel: "Gambrel", flat: "Flat" }[state.roofType], "roof");
     $("#buildSteps").innerHTML = steps
-      .map(
-        (s, i) =>
-          `<li class="step"><span class="step-num">${i + 1}</span><div class="step-body"><div class="step-head"><b>${s.title}</b><span class="step-tag">${s.tag}</span></div><p>${s.body}</p></div></li>`
-      )
+      .map((s, i) => {
+        const key = encodeURIComponent(s.title);
+        const photo = state.photos[s.title];
+        const photoHtml = photo
+          ? `<div class="step-photo"><img src="${photo}" alt="Photo for ${escapeHtml(s.title)}"><button type="button" class="step-photo-del" data-key="${key}" aria-label="Remove photo">✕</button></div>`
+          : `<label class="step-photo-add"><input type="file" accept="image/*" data-key="${key}" hidden>📷 Add photo</label>`;
+        return `<li class="step"><span class="step-num">${i + 1}</span><div class="step-body"><div class="step-head"><b>${s.title}</b><span class="step-tag">${s.tag}</span></div><p>${s.body}</p>${photoHtml}</div></li>`;
+      })
       .join("");
+  }
+
+  function resizeImage(file, maxDim, quality) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+        const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
+        const canvas = document.createElement("canvas");
+        canvas.width = w; canvas.height = h;
+        canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      img.onerror = reject;
+      img.src = url;
+    });
+  }
+  async function onStepPhoto(e) {
+    const inp = e.target.closest('input[type="file"]');
+    if (!inp || !inp.files || !inp.files[0]) return;
+    try {
+      const dataUrl = await resizeImage(inp.files[0], 1000, 0.7);
+      state.photos[decodeURIComponent(inp.dataset.key)] = dataUrl;
+      renderSteps();
+      saveCurrent();
+    } catch {
+      toast("Could not read that image");
+    }
+  }
+  function onStepPhotoDelete(e) {
+    const btn = e.target.closest(".step-photo-del");
+    if (!btn) return;
+    delete state.photos[decodeURIComponent(btn.dataset.key)];
+    renderSteps();
+    saveCurrent();
   }
 
   /* ---------- Sync form <-> state ---------- */
@@ -773,6 +1034,7 @@
 
   function formToState() {
     state.roofType = $("#roofType").value;
+    state.roofCovering = $("#roofCovering").value;
     state.pitch = parseFloat($("#pitch").value);
     state.overhang = toInches(parseFloat($("#overhang").value) || 0);
     state.width = toFt(parseFloat($("#width").value) || 0);
@@ -796,6 +1058,12 @@
     }
     // migrate bare {w,h} windows (older saves) to full objects
     state.windows = state.windows.map((w) => ({ wall: w.wall || "left", pos: w.pos || "center", w: w.w ?? 2, h: w.h ?? 2 }));
+    if (!state.photos || typeof state.photos !== "object") state.photos = {};
+    if (typeof state.address !== "string") state.address = "";
+    if (typeof state.zip !== "string") state.zip = "";
+    if (typeof state.camYaw !== "number") state.camYaw = -0.6;
+    if (typeof state.camPitch !== "number") state.camPitch = 0.5;
+    if (typeof state.roofCovering !== "string") state.roofCovering = "asphalt";
   }
 
   function readOpenings() {
@@ -854,6 +1122,7 @@
   function stateToForm() {
     normalizeOpenings();
     $("#roofType").value = state.roofType;
+    if ($("#roofCovering")) $("#roofCovering").value = state.roofCovering || "asphalt";
     $("#pitch").value = state.pitch;
     $("#pitchOut").textContent = `${state.pitch} / 12`;
     $("#overhang").value = round(dispSmall(state.overhang), state.units === "metric" ? 1 : 0);
@@ -862,7 +1131,10 @@
     $("#wallHeight").value = round(dispLen(state.wallHeight), 2);
     $("#spacing").value = state.spacing;
     $("#lumber").value = state.lumber;
+    if ($("#addrInput")) $("#addrInput").value = state.address || "";
+    if ($("#zipInput")) $("#zipInput").value = state.zip || "";
     renderOpenings();
+    renderMap();
     togglePitchField();
   }
 
@@ -914,7 +1186,13 @@
     }
   }
   function persistDesigns(list) {
-    localStorage.setItem(STORE_KEY, JSON.stringify(list));
+    try {
+      localStorage.setItem(STORE_KEY, JSON.stringify(list));
+      return true;
+    } catch (err) {
+      toast("Storage full — try fewer/smaller photos");
+      return false;
+    }
   }
   function saveCurrent() {
     const list = loadDesigns();
@@ -932,8 +1210,7 @@
       state.id = "d" + Date.now();
       list.unshift({ id: state.id, name: state.name, savedAt: now, state: snapshot });
     }
-    persistDesigns(list);
-    toast("Saved “" + state.name + "”");
+    if (persistDesigns(list)) toast("Saved “" + state.name + "”");
   }
   function defaultName() {
     const names = { gable: "Gable", "lean-to": "Lean-to", saltbox: "Saltbox", gambrel: "Gambrel", flat: "Flat" };
@@ -1006,6 +1283,7 @@
         width: 8, depth: 10, wallHeight: 7, spacing: 16, lumber: "2x4",
         doors: [{ type: "single", wall: "front", pos: "center", w: 3, h: 6.5 }],
         windows: [{ wall: "left", pos: "center", w: 2, h: 2 }],
+        photos: {},
       });
     }
     wiz.step = 0;
@@ -1146,6 +1424,37 @@
     });
   }
 
+  /* ---------- 3D orbit drag ---------- */
+  function initOrbit() {
+    const stage = $("#preview");
+    if (!stage) return;
+    let dragging = false, lastX = 0, lastY = 0;
+    const down = (e) => {
+      if (state.view !== "3d") return;
+      dragging = true;
+      const p = e.touches ? e.touches[0] : e;
+      lastX = p.clientX; lastY = p.clientY;
+      stage.classList.add("grabbing");
+      e.preventDefault();
+    };
+    const move = (e) => {
+      if (!dragging) return;
+      const p = e.touches ? e.touches[0] : e;
+      state.camYaw += (p.clientX - lastX) * 0.01;
+      state.camPitch = Math.max(0.1, Math.min(1.45, state.camPitch - (p.clientY - lastY) * 0.01));
+      lastX = p.clientX; lastY = p.clientY;
+      renderPreview();
+      e.preventDefault();
+    };
+    const up = () => { dragging = false; stage.classList.remove("grabbing"); };
+    stage.addEventListener("pointerdown", down);
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    stage.addEventListener("touchstart", down, { passive: false });
+    window.addEventListener("touchmove", move, { passive: false });
+    window.addEventListener("touchend", up);
+  }
+
   /* ---------- Init ---------- */
   function init() {
     initTheme();
@@ -1173,6 +1482,24 @@
     };
     $("#doorList").addEventListener("click", onDelete);
     $("#windowList").addEventListener("click", onDelete);
+    $("#buildSteps").addEventListener("change", onStepPhoto);
+    $("#buildSteps").addEventListener("click", onStepPhotoDelete);
+    const findBtn = $("#findAddr");
+    if (findBtn) findBtn.addEventListener("click", geocode);
+    const addrInput = $("#addrInput");
+    if (addrInput) {
+      addrInput.addEventListener("change", (e) => { state.address = e.target.value; });
+      addrInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); geocode(); } });
+    }
+    const zipInput = $("#zipInput");
+    if (zipInput) zipInput.addEventListener("input", (e) => {
+      state.zip = (e.target.value || "").replace(/\D/g, "").slice(0, 5);
+      e.target.value = state.zip;
+      renderShopping();
+    });
+    initOrbit();
+    const vEl = $("#appVersion");
+    if (vEl) vEl.textContent = "v" + APP_VERSION;
     $("#printBtn").addEventListener("click", () => window.print());
     $("#saveBtn").addEventListener("click", saveCurrent);
     $("#designsBtn").addEventListener("click", openDesigns);

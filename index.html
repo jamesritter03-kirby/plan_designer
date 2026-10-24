@@ -14,7 +14,7 @@
 </head>
 <body>
   <header class="app-header">
-    <h1>🪵 Shed Planner</h1>
+    <h1>🪵 Shed Planner <span class="app-version" id="appVersion"></span></h1>
     <div class="header-right">
       <div class="unit-toggle" role="group" aria-label="Measurement units">
         <button type="button" class="unit-btn active" data-unit="imperial">ft/in</button>
@@ -27,9 +27,9 @@
 
   <nav class="tabs" role="tablist">
     <button class="tab active" data-tab="design" role="tab">Design</button>
-    <button class="tab" data-tab="shopping" role="tab">Shopping</button>
+    <button class="tab" data-tab="shopping" role="tab">List</button>
     <button class="tab" data-tab="cuts" role="tab">Cut Sheet</button>
-    <button class="tab" data-tab="steps" role="tab">Build Steps</button>
+    <button class="tab" data-tab="steps" role="tab">Steps</button>
   </nav>
 
   <main>
@@ -42,11 +42,14 @@
             <button type="button" class="view-btn active" data-view="front">Front</button>
             <button type="button" class="view-btn" data-view="side">Side</button>
             <button type="button" class="view-btn" data-view="top">Top</button>
+            <button type="button" class="view-btn" data-view="3d">3D</button>
           </div>
         </div>
         <div id="preview" class="preview-stage"></div>
         <p id="preview-caption" class="preview-caption"></p>
       </div>
+      <!-- print-only: all three views together -->
+      <div id="printViews" class="print-views"></div>
 
       <form id="shed-form" class="form-grid" autocomplete="off">
         <fieldset>
@@ -59,6 +62,17 @@
               <option value="saltbox">Saltbox (offset peak)</option>
               <option value="gambrel">Gambrel (barn style)</option>
               <option value="flat">Flat</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Roof covering</span>
+            <select id="roofCovering">
+              <option value="asphalt">Asphalt shingles</option>
+              <option value="metal">Metal panels</option>
+              <option value="wood">Wood shingles / shakes</option>
+              <option value="corrugated">Corrugated / polycarbonate</option>
+              <option value="rolled">Rolled roofing</option>
+              <option value="rubber">EPDM rubber (flat)</option>
             </select>
           </label>
           <label class="field" id="pitchField">
@@ -120,12 +134,29 @@
           <div id="windowList" class="op-list"></div>
           <button type="button" id="addWindow" class="op-add">＋ Add window</button>
         </fieldset>
+
+        <fieldset>
+          <legend>Location</legend>
+          <label class="field">
+            <span>Address (for map &amp; local pricing)</span>
+            <input type="text" id="addrInput" placeholder="123 Main St, City, ST" autocomplete="off" />
+          </label>
+          <button type="button" id="findAddr" class="op-add">📍 Find on map</button>
+          <div id="mapBox" class="map-box"></div>
+        </fieldset>
       </form>
     </section>
 
     <!-- SHOPPING TAB -->
     <section id="tab-shopping" class="tab-panel" data-title="Shopping List">
       <div class="summary-strip" id="shopSummary"></div>
+      <div class="zip-row">
+        <label for="zipInput">ZIP code for local pricing</label>
+        <div class="zip-field">
+          <input type="text" id="zipInput" inputmode="numeric" maxlength="5" placeholder="e.g. 78701" />
+          <span id="zipNote" class="zip-note">US average</span>
+        </div>
+      </div>
       <div id="shoppingList"></div>
       <p class="disclaimer">
         Estimates include standard framing only. Add ~10% for waste, plus fasteners,
