@@ -10,7 +10,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>Planner</title>
-  <link rel="stylesheet" href="css/styles.css?v=1.5.2" />
+  <link rel="stylesheet" href="css/styles.css?v=1.5.3" />
 </head>
 <body>
   <header class="app-header">
@@ -31,6 +31,8 @@
             <button type="button" id="themeBtn" class="icon-btn" aria-label="Toggle light or dark theme">🌙</button>
           </div>
           <button type="button" id="designsBtn" class="menu-item" role="menuitem">📁 Saved designs</button>
+          <button type="button" id="saveBtn" class="menu-item" role="menuitem">💾 Save design</button>
+          <button type="button" id="printBtn" class="menu-item" role="menuitem">🖨️ Print / PDF</button>
         </div>
       </div>
     </div>
@@ -199,11 +201,6 @@
     </section>
   </main>
 
-  <footer class="actions">
-    <button type="button" id="saveBtn" class="btn-ghost">💾 Save</button>
-    <button type="button" id="printBtn" class="btn-primary">Print / PDF</button>
-  </footer>
-
   <!-- WIZARD -->
   <div id="wizard" class="overlay" aria-hidden="true">
     <div class="sheet wizard-sheet" role="dialog" aria-modal="true" aria-labelledby="wizTitle">
@@ -332,6 +329,6 @@
     </div>
   </div>
 
-  <script src="js/app.js?v=1.5.2"></script>
+  <script src="js/app.js?v=1.5.3"></script>
 </body>
 </html>

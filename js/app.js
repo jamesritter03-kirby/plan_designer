@@ -4,7 +4,7 @@
 
   const FT_PER_M = 3.280839895;
   const IN_PER_M = 39.3700787;
-  const APP_VERSION = "1.5.2";
+  const APP_VERSION = "1.5.3";
   const STORE_KEY = "shedPlanner.designs.v1";
   const SEEN_KEY = "shedPlanner.seen.v1";
   const THEME_KEY = "shedPlanner.theme.v1";
@@ -1658,8 +1658,11 @@
       e.stopPropagation();
       panel.hidden ? open() : close();
     });
-    // close when picking Saved designs, or clicking outside, or pressing Escape
-    $("#designsBtn").addEventListener("click", close);
+    // close when picking a menu action, or clicking outside, or pressing Escape
+    ["#designsBtn", "#saveBtn", "#printBtn"].forEach((sel) => {
+      const el = $(sel);
+      if (el) el.addEventListener("click", close);
+    });
     document.addEventListener("click", (e) => {
       if (!panel.hidden && !panel.contains(e.target) && e.target !== btn) close();
     });
