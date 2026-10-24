@@ -10,18 +10,29 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>Planner</title>
-  <link rel="stylesheet" href="css/styles.css?v=1.5.1" />
+  <link rel="stylesheet" href="css/styles.css?v=1.5.2" />
 </head>
 <body>
   <header class="app-header">
     <h1>Planner <span class="app-version" id="appVersion"></span></h1>
     <div class="header-right">
-      <div class="unit-toggle" role="group" aria-label="Measurement units">
-        <button type="button" class="unit-btn active" data-unit="imperial">ft/in</button>
-        <button type="button" class="unit-btn" data-unit="metric">m</button>
+      <div class="menu-wrap">
+        <button type="button" id="menuBtn" class="icon-btn" aria-label="Menu" aria-haspopup="true" aria-expanded="false">☰</button>
+        <div class="menu-panel" id="menuPanel" role="menu" hidden>
+          <div class="menu-row">
+            <span class="menu-label">Units</span>
+            <div class="unit-toggle" role="group" aria-label="Measurement units">
+              <button type="button" class="unit-btn active" data-unit="imperial">ft/in</button>
+              <button type="button" class="unit-btn" data-unit="metric">m</button>
+            </div>
+          </div>
+          <div class="menu-row">
+            <span class="menu-label">Theme</span>
+            <button type="button" id="themeBtn" class="icon-btn" aria-label="Toggle light or dark theme">🌙</button>
+          </div>
+          <button type="button" id="designsBtn" class="menu-item" role="menuitem">📁 Saved designs</button>
+        </div>
       </div>
-      <button type="button" id="themeBtn" class="icon-btn" aria-label="Toggle light or dark theme">🌙</button>
-      <button type="button" id="designsBtn" class="icon-btn" aria-label="Saved designs">📁</button>
     </div>
   </header>
 
@@ -321,6 +332,6 @@
     </div>
   </div>
 
-  <script src="js/app.js?v=1.5.1"></script>
+  <script src="js/app.js?v=1.5.2"></script>
 </body>
 </html>

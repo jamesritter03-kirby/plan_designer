@@ -4,7 +4,7 @@
 
   const FT_PER_M = 3.280839895;
   const IN_PER_M = 39.3700787;
-  const APP_VERSION = "1.5.1";
+  const APP_VERSION = "1.5.2";
   const STORE_KEY = "shedPlanner.designs.v1";
   const SEEN_KEY = "shedPlanner.seen.v1";
   const THEME_KEY = "shedPlanner.theme.v1";
@@ -1648,6 +1648,24 @@
     window.addEventListener("touchend", up);
   }
 
+  /* ---------- Header hamburger menu ---------- */
+  function initMenu() {
+    const btn = $("#menuBtn"), panel = $("#menuPanel");
+    if (!btn || !panel) return;
+    const close = () => { panel.hidden = true; btn.setAttribute("aria-expanded", "false"); };
+    const open = () => { panel.hidden = false; btn.setAttribute("aria-expanded", "true"); };
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      panel.hidden ? open() : close();
+    });
+    // close when picking Saved designs, or clicking outside, or pressing Escape
+    $("#designsBtn").addEventListener("click", close);
+    document.addEventListener("click", (e) => {
+      if (!panel.hidden && !panel.contains(e.target) && e.target !== btn) close();
+    });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
+  }
+
   /* ---------- Init ---------- */
   function init() {
     initTheme();
@@ -1704,6 +1722,7 @@
     $("#printBtn").addEventListener("click", () => window.print());
     $("#saveBtn").addEventListener("click", saveCurrent);
     $("#designsBtn").addEventListener("click", openDesigns);
+    initMenu();
     $("#designsClose").addEventListener("click", () => closeOverlay("#designs"));
     $("#newDesignBtn").addEventListener("click", () => {
       closeOverlay("#designs");
