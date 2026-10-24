@@ -4,7 +4,7 @@
 
   const FT_PER_M = 3.280839895;
   const IN_PER_M = 39.3700787;
-  const APP_VERSION = "1.6.0";
+  const APP_VERSION = "1.6.1";
   const STORE_KEY = "shedPlanner.designs.v1";
   const SEEN_KEY = "shedPlanner.seen.v1";
   const THEME_KEY = "shedPlanner.theme.v1";
@@ -1302,21 +1302,31 @@
     return steps;
   }
 
+  // Return the photo array for a step, migrating older single-string saves in place.
+  function stepPhotos(title) {
+    let v = state.photos[title];
+    if (!v) return [];
+    if (typeof v === "string") { v = [v]; state.photos[title] = v; }
+    return v;
+  }
+
   function renderSteps() {
     const steps = buildSteps();
     const roofStep = steps.filter((s) => s.tag === "Roof").length;
-    const withPhotos = steps.filter((s) => state.photos[s.title]).length;
+    const photoCount = steps.reduce((a, s) => a + stepPhotos(s.title).length, 0);
     $("#stepsSummary").innerHTML =
       chip(steps.length, "steps") +
-      chip(withPhotos, "photos") +
+      chip(photoCount, photoCount === 1 ? "photo" : "photos") +
       chip({ gable: "Gable", "lean-to": "Lean-to", saltbox: "Saltbox", gambrel: "Gambrel", flat: "Flat" }[state.roofType], "roof");
     $("#buildSteps").innerHTML = steps
       .map((s, i) => {
         const key = encodeURIComponent(s.title);
-        const photo = state.photos[s.title];
-        const photoHtml = photo
-          ? `<div class="step-photo"><img src="${photo}" alt="Photo for ${escapeHtml(s.title)}"><button type="button" class="step-photo-del" data-key="${key}" aria-label="Remove photo">✕</button></div>`
-          : `<label class="step-photo-add"><input type="file" accept="image/*" data-key="${key}" hidden>📷 Add photo</label>`;
+        const photos = stepPhotos(s.title);
+        const imgs = photos
+          .map((p, pi) => `<div class="step-photo"><img src="${p}" alt="Photo ${pi + 1} for ${escapeHtml(s.title)}"><button type="button" class="step-photo-del" data-key="${key}" data-idx="${pi}" aria-label="Remove photo">✕</button></div>`)
+          .join("");
+        const addHtml = `<label class="step-photo-add"><input type="file" accept="image/*" data-key="${key}" multiple hidden>📷 Add photo${photos.length ? "s" : ""}</label>`;
+        const photoHtml = `<div class="step-photos">${imgs}${addHtml}</div>`;
         return `<li class="step"><span class="step-num">${i + 1}</span><div class="step-body"><div class="step-head"><b>${s.title}</b><span class="step-tag">${s.tag}</span></div><p>${s.body}</p>${photoHtml}</div></li>`;
       })
       .join("");
@@ -1341,10 +1351,14 @@
   }
   async function onStepPhoto(e) {
     const inp = e.target.closest('input[type="file"]');
-    if (!inp || !inp.files || !inp.files[0]) return;
+    if (!inp || !inp.files || !inp.files.length) return;
+    const title = decodeURIComponent(inp.dataset.key);
+    const arr = stepPhotos(title);
     try {
-      const dataUrl = await resizeImage(inp.files[0], 1000, 0.7);
-      state.photos[decodeURIComponent(inp.dataset.key)] = dataUrl;
+      for (const f of Array.from(inp.files)) {
+        arr.push(await resizeImage(f, 1000, 0.7));
+      }
+      state.photos[title] = arr;
       renderSteps();
       saveCurrent();
     } catch {
@@ -1354,7 +1368,11 @@
   function onStepPhotoDelete(e) {
     const btn = e.target.closest(".step-photo-del");
     if (!btn) return;
-    delete state.photos[decodeURIComponent(btn.dataset.key)];
+    const title = decodeURIComponent(btn.dataset.key);
+    const arr = stepPhotos(title);
+    arr.splice(+btn.dataset.idx, 1);
+    if (arr.length) state.photos[title] = arr;
+    else delete state.photos[title];
     renderSteps();
     saveCurrent();
   }
