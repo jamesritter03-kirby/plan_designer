@@ -4,7 +4,7 @@
 
   const FT_PER_M = 3.280839895;
   const IN_PER_M = 39.3700787;
-  const APP_VERSION = "1.7.1";
+  const APP_VERSION = "1.7.2";
   const STORE_KEY = "shedPlanner.designs.v1";
   const SEEN_KEY = "shedPlanner.seen.v1";
   const THEME_KEY = "shedPlanner.theme.v1";
@@ -390,6 +390,7 @@
 
   /* ---------- Address autocomplete (OpenStreetMap Nominatim) ---------- */
   let addrTimer, addrSeq = 0;
+  let custGeoTimer, lastCustAddr = "";
   function onAddrInput() {
     const q = ($("#addrInput").value || "").trim();
     state.address = q;
@@ -423,14 +424,16 @@
     const ul = $("#addrSuggest");
     if (ul) { ul.hidden = true; ul.innerHTML = ""; ul._items = null; }
   }
-  function pickSuggestion(hit) {
+  function pickSuggestion(hit, keepZip) {
     state.lat = parseFloat(hit.lat);
     state.lon = parseFloat(hit.lon);
     state.address = hit.display_name || state.address;
-    const pc = hit.address && hit.address.postcode ? String(hit.address.postcode).match(/\d{5}/) : null;
-    if (pc) {
-      state.zip = pc[0];
-      const zi = $("#zipInput"); if (zi) zi.value = state.zip;
+    if (!keepZip) {
+      const pc = hit.address && hit.address.postcode ? String(hit.address.postcode).match(/\d{5}/) : null;
+      if (pc) {
+        state.zip = pc[0];
+        const zi = $("#zipInput"); if (zi) zi.value = state.zip;
+      }
     }
     $("#addrInput").value = state.address;
     hideSuggest();
@@ -438,23 +441,55 @@
     renderShopping();
   }
 
+  // Combined, comma-joined customer address (street, city, region, postal).
+  function customerAddressStr() {
+    const c = state.customer || {};
+    return [c.street, c.city, c.region, c.postal].map((s) => (s || "").trim()).filter(Boolean).join(", ");
+  }
+
+  // When the customer address changes, mirror it into the Location map and the
+  // costing ZIP, then geocode it quietly so the map updates on its own.
+  function syncCustomerLocation() {
+    const caddr = customerAddressStr();
+    if (caddr === lastCustAddr) return;
+    lastCustAddr = caddr;
+    if (!caddr) return;
+    state.address = caddr;
+    const ai = $("#addrInput"); if (ai) ai.value = caddr;
+    const postal = ((state.customer.postal || "").match(/\d{5}/) || [])[0];
+    if (postal) {
+      state.zip = postal;
+      const zi = $("#zipInput"); if (zi) zi.value = postal;
+    }
+    clearTimeout(custGeoTimer);
+    custGeoTimer = setTimeout(() => geocodeAddress(caddr, { silent: true, keepZip: !!postal }), 600);
+  }
+
   // Geocode the typed address with Nominatim (used by the Find button / Enter).
   async function geocode() {
     const q = ($("#addrInput").value || "").trim();
     state.address = q;
     hideSuggest();
+    await geocodeAddress(q);
+  }
+
+  // Geocode an arbitrary address string. opts.silent suppresses toast/button state
+  // (used by the automatic customer lookup); opts.keepZip preserves an explicitly
+  // entered costing ZIP instead of overwriting it from the lookup result.
+  async function geocodeAddress(q, opts = {}) {
+    q = (q || "").trim();
     if (!q) { state.lat = state.lon = null; renderMap(); return; }
-    const btn = $("#findAddr");
+    const btn = opts.silent ? null : $("#findAddr");
     if (btn) { btn.disabled = true; btn.textContent = "Searching…"; }
     try {
       const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=1&q=${encodeURIComponent(q)}`;
       const res = await fetch(url, { headers: { "Accept": "application/json" } });
       const data = await res.json();
-      if (!data.length) { toast("Address not found"); renderMap(); return; }
-      pickSuggestion(data[0]);
+      if (!data.length) { if (!opts.silent) toast("Address not found"); renderMap(); return; }
+      pickSuggestion(data[0], opts.keepZip);
     } catch (err) {
       console.warn("Geocode failed:", err);
-      toast("Could not reach map service");
+      if (!opts.silent) toast("Could not reach map service");
       renderMap();
     } finally {
       if (btn) { btn.disabled = false; btn.textContent = "📍 Find on map"; }
@@ -1574,6 +1609,7 @@
       region: ($("#custRegion").value || "").trim(),
       postal: ($("#custPostal").value || "").trim(),
     };
+    syncCustomerLocation();
     readOpenings();
     $("#pitchOut").textContent = `${state.pitch} / 12`;
     $("#saltboxPeakOut").textContent = `${Math.round(saltboxFrac() * 100)}%`;
@@ -1682,6 +1718,7 @@
     if ($("#custCity")) $("#custCity").value = c.city || "";
     if ($("#custRegion")) $("#custRegion").value = c.region || "";
     if ($("#custPostal")) $("#custPostal").value = c.postal || "";
+    lastCustAddr = customerAddressStr();
     if ($("#addrInput")) $("#addrInput").value = state.address || "";
     if ($("#zipInput")) $("#zipInput").value = state.zip || "";
     if ($("#planStart")) $("#planStart").value = state.plan.startDate || "";
