@@ -271,14 +271,42 @@ select {
 
 .disclaimer { font-size: 12px; color: var(--muted); padding: 4px 6px 0; line-height: 1.5; }
 
-/* Per-window size rows */
-.win-sizes { display: grid; gap: 8px; margin-top: 2px; }
-.win-row { display: grid; grid-template-columns: auto 1fr 1fr; gap: 8px; align-items: center; }
-.win-row-label { font-size: 13px; color: var(--muted); }
-.win-row label { display: grid; gap: 3px; }
-.win-row label small { font-size: 11px; color: var(--muted); }
-.win-row input { padding: 10px 12px; min-height: 44px; }
-.win-empty { color: var(--muted); font-size: 13px; margin: 2px 0; }
+/* Openings (doors & windows) */
+.op-list { display: grid; gap: 10px; margin-bottom: 10px; }
+.op-card {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 12px 12px;
+}
+.op-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.op-head b { font-size: 14px; }
+.op-del {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: #ff8e8e;
+  width: 30px; height: 30px;
+  border-radius: 8px;
+  font-size: 14px;
+}
+.op-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.op-f { display: grid; gap: 4px; }
+.op-f > span { font-size: 12px; color: var(--muted); }
+.op-f.op-wide { grid-column: 1 / -1; }
+.op-f input, .op-f select { min-height: 44px; padding: 10px 12px; font-size: 16px; }
+.op-add {
+  width: 100%;
+  border: 1px dashed var(--line);
+  background: transparent;
+  color: var(--accent);
+  font-size: 15px;
+  font-weight: 600;
+  padding: 12px;
+  border-radius: 12px;
+  min-height: 46px;
+}
+.op-add:active { transform: scale(0.99); }
+.win-empty { color: var(--muted); font-size: 13px; margin: 2px 0; text-align: center; }
 
 /* Build steps */
 .steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }

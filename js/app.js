@@ -22,15 +22,9 @@
     wallHeight: 7, // ft
     spacing: 16, // inches O.C.
     lumber: "2x4",
-    doorWidth: 3, // ft
-    doorHeight: 6.5, // ft
-    doorPos: "center",
-    doorType: "single",
-    doorCount: 1,
-    windows: 1,
-    winWidth: 2, // ft (legacy default, migrated into windowList)
-    winHeight: 2, // ft
-    windowList: [{ w: 2, h: 2 }],
+    // openings: each has its own size, wall and position
+    doors: [{ type: "single", wall: "front", pos: "center", w: 3, h: 6.5 }],
+    windows: [{ wall: "left", pos: "center", w: 2, h: 2 }],
     view: "front",
   };
 
@@ -206,11 +200,12 @@
     });
 
     // Walls
-    const winCount = state.windowList.length;
+    const doorCount = state.doors.length, winCount = state.windows.length;
+    const bigDoor = state.doors.some((d) => d.type === "overhead" || d.w > 5);
     const studs =
       studsForWall(W) * 2 + studsForWall(D) * 2 +
       3 /*extra corner studs*/ +
-      state.doorCount * 4 /*door framing*/ +
+      doorCount * 4 /*door framing*/ +
       winCount * 6;
     groups.push({
       title: "Walls",
@@ -218,7 +213,9 @@
         { label: `Bottom plate — PT ${state.lumber}`, sub: `wall perimeter`, qty: fmtTotal(perim) },
         { label: `Top plate (doubled) — ${state.lumber}`, sub: `2× perimeter`, qty: fmtTotal(perim * 2) },
         { label: `Studs — ${state.lumber}`, sub: `${state.spacing}" O.C. + corners & openings`, qty: `${studs} × ${fmtLen(H)}` },
-        { label: `Door headers — 2×6 (×2 each)`, sub: `${state.doorCount} ${DOOR_LABELS[state.doorType]} opening(s)${state.doorType === "overhead" || effDoorWidth() > 5 ? " — size up to 2×10/LVL" : ""}`, qty: `${state.doorCount * 2} pcs` },
+        ...(doorCount > 0
+          ? [{ label: `Door headers — 2×6 (×2 each)`, sub: `${doorCount} opening(s)${bigDoor ? " — size wide/overhead to 2×10/LVL" : ""}`, qty: `${doorCount * 2} pcs` }]
+          : []),
         ...(winCount > 0
           ? [{ label: `Window headers — 2×6 (×2 each)`, sub: `${winCount} window(s)`, qty: `${winCount * 2} pcs` }]
           : []),
@@ -250,8 +247,8 @@
         { label: `Roofing — shingles or metal`, sub: `cover roof area`, qty: `≈ ${Math.ceil(roofArea)} sq ft` },
         { label: `Roofing felt / underlayment`, sub: `under roofing`, qty: `≈ ${Math.ceil(roofArea)} sq ft` },
         { label: `House wrap`, sub: `walls`, qty: `≈ ${Math.ceil(perim * H)} sq ft` },
-        { label: `${state.doorCount} × ${DOOR_LABELS[state.doorType]} door`, sub: `${fmtLen(effDoorWidth())} × ${fmtLen(state.doorHeight)} each${state.doorCount <= 1 ? ", " + state.doorPos : ""}`, qty: `${state.doorCount}` },
-        { label: `Windows`, sub: state.windowList.map((w) => `${fmtLen(w.w)}×${fmtLen(w.h)}`).join(", ") || "none", qty: `${state.windowList.length}` },
+        ...state.doors.map((d) => ({ label: `Door — ${DOOR_LABELS[d.type]}`, sub: `${fmtLen(d.w)} × ${fmtLen(d.h)} · ${d.wall} wall, ${d.pos}`, qty: `1` })),
+        ...state.windows.map((w) => ({ label: `Window`, sub: `${fmtLen(w.w)} × ${fmtLen(w.h)} · ${w.wall} wall, ${w.pos}`, qty: `1` })),
         { label: `Framing nails / screws, joist hangers, hurricane ties`, sub: `assorted`, qty: `as needed` },
       ],
     });
@@ -340,53 +337,41 @@
   const C = { wall: "#c9b28a", wall2: "#a98f63", line: "#1b2a3a", roof: "#4ea1d3", dim: "#9fb2ce", door: "#2c4066", stud: "#e0cda4", gap: "#0d1524" };
 
   const DOOR_LABELS = { single: "single swing", double: "double", barn: "barn / sliding", overhead: "overhead roll-up" };
-
-  function effDoorWidth() {
-    const W = state.width, n = state.doorCount;
-    const cap = (W - (n + 1) * 0.3) / n;
-    return Math.max(0.5, Math.min(state.doorWidth, cap > 0 ? cap : W / (n + 1)));
-  }
-  function doorLayout() {
-    const W = state.width, n = state.doorCount, dw = effDoorWidth();
-    const out = [];
-    if (n <= 1) {
-      const margin = Math.min(0.5, W * 0.06);
-      const left = state.doorPos === "left" ? margin : state.doorPos === "right" ? W - margin - dw : W / 2 - dw / 2;
-      out.push({ left, w: dw });
-    } else {
-      const gap = (W - n * dw) / (n + 1);
-      for (let i = 0; i < n; i++) out.push({ left: gap * (i + 1) + dw * i, w: dw });
-    }
-    return out;
-  }
-  function freeSegments(W, doors, pad) {
-    const occ = doors.map((d) => [Math.max(0, d.left - pad), Math.min(W, d.left + d.w + pad)]).sort((a, b) => a[0] - b[0]);
-    const segs = [];
-    let cursor = 0;
-    for (const [a, b] of occ) {
-      if (a > cursor) segs.push({ a: cursor, b: a, cursor });
-      cursor = Math.max(cursor, b);
-    }
-    if (cursor < W) segs.push({ a: cursor, b: W, cursor });
-    return segs;
-  }
-  function placeFrontWindows(W, doors, winList) {
-    const pad = 0.25;
-    const segs = freeSegments(W, doors, 0.15);
-    segs.forEach((s) => (s.cursor = s.a));
+  // Place openings along a wall of length L (ft) by their left/center/right anchor.
+  function layoutWall(L, items) {
+    const pad = 0.3;
+    const buckets = { left: [], center: [], right: [] };
+    items.forEach((it) => (buckets[it.pos] || buckets.center).push(it));
     const placed = [];
-    winList.forEach((win) => {
-      if (!segs.length) return;
-      const seg = segs.reduce((m, s) => (s.b - s.cursor > m.b - m.cursor ? s : m), segs[0]);
-      const room = seg.b - seg.cursor - pad;
-      if (room < 0.6) return;
-      const wW = Math.min(win.w, room, W * 0.45);
-      const cx = seg.cursor + pad / 2 + wW / 2;
-      placed.push({ cx, w: wW, h: win.h });
-      seg.cursor = cx + wW / 2 + pad / 2;
-    });
+    const place = (list, anchor) => {
+      if (!list.length) return;
+      let widths = list.map((it) => it.w);
+      let total = widths.reduce((a, b) => a + b, 0) + pad * (list.length - 1);
+      if (total > L - pad) {
+        const f = (L - pad * (list.length + 1)) / widths.reduce((a, b) => a + b, 0);
+        widths = widths.map((w) => Math.max(0.5, w * Math.max(0.2, f)));
+        total = widths.reduce((a, b) => a + b, 0) + pad * (list.length - 1);
+      }
+      let start = anchor === "left" ? pad : anchor === "right" ? L - pad - total : (L - total) / 2;
+      start = Math.max(0, Math.min(start, L - total));
+      let cursor = start;
+      list.forEach((it, i) => {
+        placed.push({ ...it, left: cursor, w: widths[i] });
+        cursor += widths[i] + pad;
+      });
+    };
+    place(buckets.left, "left");
+    place(buckets.center, "center");
+    place(buckets.right, "right");
     return placed;
   }
+  function wallOpenings(wall) {
+    return [
+      ...state.doors.filter((d) => d.wall === wall).map((d) => ({ ...d, kind: "door" })),
+      ...state.windows.filter((w) => w.wall === wall).map((w) => ({ ...w, kind: "win" })),
+    ];
+  }
+
   function drawFrontDoor(type, leftFt, wFt, hFt, sx, sy) {
     const x = sx(leftFt), w = sx(leftFt + wFt) - sx(leftFt), yTop = sy(hFt), yBot = sy(0), h = yBot - yTop;
     let s = "";
@@ -413,8 +398,7 @@
       return s;
     }
     s += `<rect x="${x}" y="${yTop}" width="${w}" height="${h}" fill="${C.door}" stroke="${C.line}" stroke-width="1.5"/>`;
-    const knob = state.doorPos === "right" && state.doorCount <= 1 ? x + 8 : x + w - 8;
-    s += `<circle cx="${knob}" cy="${(yTop + yBot) / 2}" r="2.5" fill="${C.dim}"/>`;
+    s += `<circle cx="${x + w - 8}" cy="${(yTop + yBot) / 2}" r="2.5" fill="${C.dim}"/>`;
     return s;
   }
   function drawFrontWindow(cxFt, wFt, hFt, sx, sy) {
@@ -427,33 +411,63 @@
     s += `<line x1="${wx}" y1="${wy + wh / 2}" x2="${wx + ww}" y2="${wy + wh / 2}" stroke="${C.line}" stroke-width="1"/>`;
     return s;
   }
-  function drawPlanDoor(type, leftFt, wFt, sx, sy, D) {
-    const x1 = sx(leftFt), x2 = sx(leftFt + wFt), yb = sy(D), w = x2 - x1;
-    let s = `<rect x="${x1}" y="${yb - 3}" width="${w}" height="6" fill="${C.gap}" stroke="none"/>`;
+  // Draw front/side-wall openings laid out along a wall of length L using local sx/sy.
+  function drawElevationOpenings(wall, L, Hmax, sx, sy) {
+    let s = "";
+    layoutWall(L, wallOpenings(wall)).forEach((op) => {
+      if (op.kind === "door") s += drawFrontDoor(op.type, op.left, Math.min(op.w, L), Math.min(op.h, Hmax * 0.95), sx, sy);
+      else s += drawFrontWindow(op.left + op.w / 2, Math.min(op.w, L * 0.45), Math.min(op.h, Hmax * 0.6), sx, sy);
+    });
+    return s;
+  }
+
+  // Canonical plan door: wall along local x (centered), interior toward -y.
+  function planDoorCanonical(type, w) {
+    let s = `<rect x="${-w / 2}" y="-3" width="${w}" height="6" fill="${C.gap}" stroke="none"/>`;
     if (type === "overhead") {
       for (let i = 0; i < 3; i++) {
-        const xx = x1 + (w * (i + 0.5)) / 3;
-        s += `<line x1="${xx}" y1="${yb}" x2="${xx}" y2="${yb - 14}" stroke="${C.door}" stroke-width="1.3" stroke-dasharray="3 3" opacity="0.85"/>`;
+        const xx = -w / 2 + (w * (i + 0.5)) / 3;
+        s += `<line x1="${xx}" y1="0" x2="${xx}" y2="-14" stroke="${C.door}" stroke-width="1.3" stroke-dasharray="3 3" opacity="0.85"/>`;
       }
       return s;
     }
     if (type === "barn") {
-      s += `<line x1="${x1 - 4}" y1="${yb - 5}" x2="${x2 + w * 0.9 + 4}" y2="${yb - 5}" stroke="${C.line}" stroke-width="1.5"/>`;
-      s += `<rect x="${x2}" y="${yb - 7}" width="${w * 0.9}" height="4" fill="${C.door}" stroke="${C.line}" stroke-width="1"/>`;
+      s += `<line x1="${-w / 2 - 4}" y1="-5" x2="${w / 2 + w * 0.9 + 4}" y2="-5" stroke="${C.line}" stroke-width="1.5"/>`;
+      s += `<rect x="${w / 2}" y="-7" width="${w * 0.9}" height="4" fill="${C.door}" stroke="${C.line}" stroke-width="1"/>`;
       return s;
     }
     if (type === "double") {
-      const mid = sx(leftFt + wFt / 2);
-      s += `<path d="M ${x1} ${yb} A ${w / 2} ${w / 2} 0 0 1 ${mid} ${yb - w / 2}" fill="none" stroke="${C.door}" stroke-width="1.3" opacity="0.8"/>`;
-      s += `<path d="M ${x2} ${yb} A ${w / 2} ${w / 2} 0 0 0 ${mid} ${yb - w / 2}" fill="none" stroke="${C.door}" stroke-width="1.3" opacity="0.8"/>`;
-      s += `<line x1="${x1}" y1="${yb}" x2="${x1}" y2="${yb - w / 2}" stroke="${C.door}" stroke-width="1.6"/>`;
-      s += `<line x1="${x2}" y1="${yb}" x2="${x2}" y2="${yb - w / 2}" stroke="${C.door}" stroke-width="1.6"/>`;
+      s += `<path d="M ${-w / 2} 0 A ${w / 2} ${w / 2} 0 0 1 0 ${-w / 2}" fill="none" stroke="${C.door}" stroke-width="1.3" opacity="0.8"/>`;
+      s += `<path d="M ${w / 2} 0 A ${w / 2} ${w / 2} 0 0 0 0 ${-w / 2}" fill="none" stroke="${C.door}" stroke-width="1.3" opacity="0.8"/>`;
+      s += `<line x1="${-w / 2}" y1="0" x2="${-w / 2}" y2="${-w / 2}" stroke="${C.door}" stroke-width="1.6"/>`;
+      s += `<line x1="${w / 2}" y1="0" x2="${w / 2}" y2="${-w / 2}" stroke="${C.door}" stroke-width="1.6"/>`;
       return s;
     }
-    const hingeLeft = !(state.doorPos === "right" && state.doorCount <= 1);
-    const hx = hingeLeft ? x1 : x2;
-    s += `<path d="M ${x1} ${yb} A ${w} ${w} 0 0 1 ${x2} ${yb}" fill="none" stroke="${C.door}" stroke-width="1.3" opacity="0.8"/>`;
-    s += `<line x1="${hx}" y1="${yb}" x2="${hx}" y2="${yb - w}" stroke="${C.door}" stroke-width="2"/>`;
+    s += `<path d="M ${-w / 2} 0 A ${w} ${w} 0 0 1 ${w / 2} 0" fill="none" stroke="${C.door}" stroke-width="1.3" opacity="0.8"/>`;
+    s += `<line x1="${-w / 2}" y1="0" x2="${-w / 2}" y2="${-w}" stroke="${C.door}" stroke-width="2"/>`;
+    return s;
+  }
+  function wallTransform(wall, centerFt, sx, sy, W, D) {
+    if (wall === "front") return { px: sx(centerFt), py: sy(D), rot: 0 };
+    if (wall === "back") return { px: sx(centerFt), py: sy(0), rot: 180 };
+    if (wall === "left") return { px: sx(0), py: sy(centerFt), rot: 90 };
+    return { px: sx(W), py: sy(centerFt), rot: -90 };
+  }
+  // Draw all openings on every wall for the plan (top) view.
+  function drawPlanOpenings(sx, sy, W, D, scale) {
+    let s = "";
+    ["front", "back", "left", "right"].forEach((wall) => {
+      const L = wall === "front" || wall === "back" ? W : D;
+      layoutWall(L, wallOpenings(wall)).forEach((op) => {
+        const center = op.left + op.w / 2;
+        const t = wallTransform(wall, center, sx, sy, W, D);
+        const wPx = op.w * scale;
+        const inner = op.kind === "door"
+          ? planDoorCanonical(op.type, wPx)
+          : `<rect x="${-wPx / 2}" y="-2.5" width="${wPx}" height="5" fill="#bcd6e8" stroke="${C.line}" stroke-width="1"/>`;
+        s += `<g transform="translate(${t.px} ${t.py}) rotate(${t.rot})">${inner}</g>`;
+      });
+    });
     return s;
   }
 
@@ -471,13 +485,8 @@
     s += `<rect x="${sx(0)}" y="${sy(H)}" width="${W * scale}" height="${H * scale}" fill="${C.wall}" stroke="${C.line}" stroke-width="2"/>`;
     // roof shape (front shows gable triangle etc.)
     s += roofFrontPath(g, sx, sy);
-    // doors (type + count) on the front wall
-    const doors = doorLayout();
-    const dh = Math.min(state.doorHeight, H * 0.95);
-    doors.forEach((d) => (s += drawFrontDoor(state.doorType, d.left, d.w, dh, sx, sy)));
-    // windows — each its own size, packed into free wall space
-    const wins = placeFrontWindows(W, doors, state.windowList);
-    wins.forEach((win) => (s += drawFrontWindow(win.cx, win.w, Math.min(win.h, H * 0.6), sx, sy)));
+    // openings on the front wall
+    s += drawElevationOpenings("front", W, H, sx, sy);
     // dimensions
     s += dimLineH(sx(0), sx(W), yBase + 16, fmtLen(W), scale);
     s += dimLineV(x0 - 16, sy(0), sy(g.peakHeight), fmtLen(g.peakHeight));
@@ -545,18 +554,8 @@
       const fx = sx((D / (n - 1 || 1)) * i);
       s += `<line x1="${fx}" y1="${sy(H)}" x2="${fx}" y2="${sy(H) - 5}" stroke="${C.line}" stroke-width="1" opacity="0.45"/>`;
     }
-    // windows on the side wall (each its own size), spread along the depth
-    const sideWins = state.windowList.slice(0, 3);
-    sideWins.forEach((win, i) => {
-      const ww = Math.min(win.w, D * 0.3) * scale;
-      const wh = Math.min(win.h, H * 0.6) * scale;
-      const frac = sideWins.length === 1 ? 0.5 : 0.25 + (0.5 * i) / (sideWins.length - 1);
-      const wx = sx(D * frac) - ww / 2;
-      const wyy = sy(H * 0.5 + win.h / 2);
-      s += `<rect x="${wx}" y="${wyy}" width="${ww}" height="${wh}" fill="#bcd6e8" stroke="${C.line}" stroke-width="1.5"/>`;
-      s += `<line x1="${wx + ww / 2}" y1="${wyy}" x2="${wx + ww / 2}" y2="${wyy + wh}" stroke="${C.line}" stroke-width="1"/>`;
-      s += `<line x1="${wx}" y1="${wyy + wh / 2}" x2="${wx + ww}" y2="${wyy + wh / 2}" stroke="${C.line}" stroke-width="1"/>`;
-    });
+    // openings on the left side wall (each its own size), laid out along the depth
+    s += drawElevationOpenings("left", D, H, sx, sy);
     s += dimLineH(sx(0), sx(D), yBase + 16, fmtLen(D), scale);
     s += dimLineV(sx(-oh) - 14, sy(0), sy(top), fmtLen(top));
     s += `<text x="${sx(D / 2)}" y="${sy(top) + 13}" fill="#04121c" font-size="9" text-anchor="middle">ridge · ${n} rafters @ ${state.spacing}" O.C.</text>`;
@@ -590,24 +589,8 @@
     // dashed roof-overhang (eaves) outline around the walls
     const oh = state.overhang / 12;
     s += `<rect x="${sx(-oh)}" y="${sy(-oh)}" width="${(W + 2 * oh) * scale}" height="${(D + 2 * oh) * scale}" fill="none" stroke="${C.roof}" stroke-width="1.3" stroke-dasharray="5 4" opacity="0.8"/>`;
-    // doors on the front wall (type + count)
-    const planDoors = doorLayout();
-    planDoors.forEach((d) => (s += drawPlanDoor(state.doorType, d.left, d.w, sx, sy, D)));
-    if (state.doorType === "single" || state.doorType === "double") {
-      const dcx = planDoors[0].left + planDoors[0].w / 2;
-      s += `<text x="${sx(dcx)}" y="${sy(D) + 26}" fill="${C.dim}" font-size="9" text-anchor="middle">${state.doorCount} door${state.doorCount > 1 ? "s" : ""}</text>`;
-    }
-    // windows on the side walls (each its own size)
-    state.windowList.slice(0, 4).forEach((win, i) => {
-      const onLeft = i % 2 === 0;
-      const group = Math.floor(i / 2);
-      const groups = Math.max(1, Math.ceil(Math.min(state.windowList.length, 4) / 2));
-      const frac = 0.3 + 0.4 * (groups <= 1 ? 0 : group / (groups - 1));
-      const wy = sy(D * Math.min(0.8, frac));
-      const side = onLeft ? sx(0) : sx(W);
-      const wlen = Math.min(win.w, D * 0.4) * scale;
-      s += `<rect x="${side - 3}" y="${wy - wlen / 2}" width="6" height="${wlen}" fill="#bcd6e8" stroke="${C.line}" stroke-width="1"/>`;
-    });
+    // all openings on their walls (doors with swing/slide/roll-up marks, windows as edge rects)
+    s += drawPlanOpenings(sx, sy, W, D, scale);
     s += dimLineH(sx(0), sx(W), sy(0) - 14, fmtLen(W), scale);
     s += dimLineV(sx(0) - 14, sy(0), sy(D), fmtLen(D));
     s += `<text x="${sx(W / 2)}" y="${sy(D / 2)}" fill="${C.line}" font-size="10" text-anchor="middle" opacity="0.7">${nj} joists @ ${state.spacing}" O.C.</text>`;
@@ -697,7 +680,7 @@
     steps.push({
       tag: "Walls",
       title: "Frame the four walls",
-      body: `Build each wall flat on the deck: bottom plate + top plate with ${state.lumber} studs ${state.spacing}" O.C. Frame ${state.doorCount} ${DOOR_LABELS[state.doorType]} door opening(s) at ${fmtLen(effDoorWidth())} wide (king + jack studs, header)${state.windowList.length > 0 ? ` and ${state.windowList.length} window opening(s)` : ""}.`,
+      body: `Build each wall flat on the deck: bottom plate + top plate with ${state.lumber} studs ${state.spacing}" O.C. Frame ${state.doors.length} door opening(s)${state.windows.length > 0 ? ` and ${state.windows.length} window opening(s)` : ""} with king + jack studs and headers on the correct walls.`,
     });
     steps.push({
       tag: "Walls",
@@ -754,7 +737,7 @@
     steps.push({
       tag: "Finish",
       title: "Doors, windows & trim",
-      body: `Hang ${state.doorCount} ${DOOR_LABELS[state.doorType]} door(s) at ${fmtLen(effDoorWidth())} × ${fmtLen(state.doorHeight)}${state.windowList.length > 0 ? `, then install ${state.windowList.length} window(s) (${state.windowList.map((w) => `${fmtLen(w.w)}×${fmtLen(w.h)}`).join(", ")})` : ""}. Flash and caulk each opening, then add corner and trim boards and fascia.`,
+      body: `Install the openings: ${state.doors.map((d) => `${DOOR_LABELS[d.type]} door ${fmtLen(d.w)}×${fmtLen(d.h)} (${d.wall})`).join(", ") || "no doors"}${state.windows.length > 0 ? `; windows ${state.windows.map((w) => `${fmtLen(w.w)}×${fmtLen(w.h)} (${w.wall})`).join(", ")}` : ""}. Flash and caulk each opening, then add corner and trim boards and fascia.`,
     });
     steps.push({
       tag: "Finish",
@@ -797,61 +780,79 @@
     state.wallHeight = toFt(parseFloat($("#wallHeight").value) || 0);
     state.spacing = parseInt($("#spacing").value, 10);
     state.lumber = $("#lumber").value;
-    state.doorWidth = toFt(parseFloat($("#doorWidth").value) || 0);
-    state.doorHeight = toFt(parseFloat($("#doorHeight").value) || 0);
-    state.doorPos = $("#doorPos").value;
-    state.doorType = $("#doorType").value;
-    state.doorCount = Math.max(1, parseInt($("#doorCount").value, 10) || 1);
-    const wantCount = Math.max(0, parseInt($("#windows").value, 10) || 0);
-    if (wantCount !== state.windowList.length) {
-      resizeWindowList(wantCount);
-      renderWindowInputs();
-    } else {
-      $$("#windowSizes .win-w").forEach((inp) => {
-        const i = +inp.dataset.i;
-        if (state.windowList[i]) state.windowList[i].w = toFt(parseFloat(inp.value) || 0);
-      });
-      $$("#windowSizes .win-h").forEach((inp) => {
-        const i = +inp.dataset.i;
-        if (state.windowList[i]) state.windowList[i].h = toFt(parseFloat(inp.value) || 0);
-      });
-    }
-    state.windows = state.windowList.length;
+    readOpenings();
     $("#pitchOut").textContent = `${state.pitch} / 12`;
     togglePitchField();
     renderAll();
   }
 
-  function resizeWindowList(n) {
-    while (state.windowList.length < n) state.windowList.push({ w: 2, h: 2 });
-    if (state.windowList.length > n) state.windowList.length = n;
-  }
+  const OPENING_DEFAULT_DOOR = { type: "single", wall: "front", pos: "center", w: 3, h: 6.5 };
+  const OPENING_DEFAULT_WIN = { wall: "left", pos: "center", w: 2, h: 2 };
 
-  function normalizeWindows() {
-    if (!Array.isArray(state.windowList)) {
-      const n = state.windows || 0;
-      const w = state.winWidth || 2, h = state.winHeight || 2;
-      state.windowList = Array.from({ length: n }, () => ({ w, h }));
+  function normalizeOpenings() {
+    if (!Array.isArray(state.doors)) state.doors = [{ ...OPENING_DEFAULT_DOOR }];
+    if (!Array.isArray(state.windows) || state.windows.some((w) => typeof w !== "object" || w === null)) {
+      state.windows = [{ ...OPENING_DEFAULT_WIN }];
     }
-    state.windows = state.windowList.length;
+    // migrate bare {w,h} windows (older saves) to full objects
+    state.windows = state.windows.map((w) => ({ wall: w.wall || "left", pos: w.pos || "center", w: w.w ?? 2, h: w.h ?? 2 }));
   }
 
-  function renderWindowInputs() {
-    const host = $("#windowSizes");
-    if (!host) return;
+  function readOpenings() {
+    state.doors = $$("#doorList .op-card").map((card) => ({
+      type: card.querySelector('[data-f="type"]').value,
+      wall: card.querySelector('[data-f="wall"]').value,
+      pos: card.querySelector('[data-f="pos"]').value,
+      w: toFt(parseFloat(card.querySelector('[data-f="w"]').value) || 0),
+      h: toFt(parseFloat(card.querySelector('[data-f="h"]').value) || 0),
+    }));
+    state.windows = $$("#windowList .op-card").map((card) => ({
+      wall: card.querySelector('[data-f="wall"]').value,
+      pos: card.querySelector('[data-f="pos"]').value,
+      w: toFt(parseFloat(card.querySelector('[data-f="w"]').value) || 0),
+      h: toFt(parseFloat(card.querySelector('[data-f="h"]').value) || 0),
+    }));
+  }
+
+  const WALL_OPTS = [["front", "Front"], ["back", "Back"], ["left", "Left"], ["right", "Right"]];
+  const POS_OPTS = [["left", "Left"], ["center", "Center"], ["right", "Right"]];
+  const DOOR_TYPE_OPTS = [["single", "Single swing"], ["double", "Double doors"], ["barn", "Barn / sliding"], ["overhead", "Overhead / roll-up"]];
+  const opt = (opts, val) => opts.map(([v, l]) => `<option value="${v}"${v === val ? " selected" : ""}>${l}</option>`).join("");
+
+  function renderOpenings() {
     const u = state.units === "metric" ? "m" : "ft";
-    host.innerHTML = state.windowList
-      .map(
-        (win, i) =>
-          `<div class="win-row"><span class="win-row-label">Win ${i + 1}</span>` +
-          `<label><small>W (${u})</small><input type="number" class="win-w" data-i="${i}" value="${round(dispLen(win.w), 2)}" min="0.5" step="0.5" inputmode="decimal"></label>` +
-          `<label><small>H (${u})</small><input type="number" class="win-h" data-i="${i}" value="${round(dispLen(win.h), 2)}" min="0.5" step="0.5" inputmode="decimal"></label></div>`
-      )
-      .join("") || `<p class="win-empty">No windows.</p>`;
+    const sizeInputs = (o) =>
+      `<label class="op-f"><span>W (${u})</span><input class="op-in" data-f="w" type="number" value="${round(dispLen(o.w), 2)}" min="0.5" step="0.5" inputmode="decimal"></label>` +
+      `<label class="op-f"><span>H (${u})</span><input class="op-in" data-f="h" type="number" value="${round(dispLen(o.h), 2)}" min="0.5" step="0.5" inputmode="decimal"></label>`;
+    const dl = $("#doorList");
+    if (dl) {
+      dl.innerHTML = state.doors
+        .map(
+          (d, i) =>
+            `<div class="op-card" data-kind="door" data-i="${i}"><div class="op-head"><b>Door ${i + 1}</b><button type="button" class="op-del" data-kind="door" data-i="${i}" aria-label="Remove door">✕</button></div>` +
+            `<div class="op-grid"><label class="op-f op-wide"><span>Type</span><select class="op-in" data-f="type">${opt(DOOR_TYPE_OPTS, d.type)}</select></label>` +
+            `<label class="op-f"><span>Wall</span><select class="op-in" data-f="wall">${opt(WALL_OPTS, d.wall)}</select></label>` +
+            `<label class="op-f"><span>Position</span><select class="op-in" data-f="pos">${opt(POS_OPTS, d.pos)}</select></label>` +
+            `${sizeInputs(d)}</div></div>`
+        )
+        .join("") || `<p class="win-empty">No doors. Tap “Add door”.</p>`;
+    }
+    const wl = $("#windowList");
+    if (wl) {
+      wl.innerHTML = state.windows
+        .map(
+          (w, i) =>
+            `<div class="op-card" data-kind="window" data-i="${i}"><div class="op-head"><b>Window ${i + 1}</b><button type="button" class="op-del" data-kind="window" data-i="${i}" aria-label="Remove window">✕</button></div>` +
+            `<div class="op-grid"><label class="op-f"><span>Wall</span><select class="op-in" data-f="wall">${opt(WALL_OPTS, w.wall)}</select></label>` +
+            `<label class="op-f"><span>Position</span><select class="op-in" data-f="pos">${opt(POS_OPTS, w.pos)}</select></label>` +
+            `${sizeInputs(w)}</div></div>`
+        )
+        .join("") || `<p class="win-empty">No windows. Tap “Add window”.</p>`;
+    }
   }
 
   function stateToForm() {
-    normalizeWindows();
+    normalizeOpenings();
     $("#roofType").value = state.roofType;
     $("#pitch").value = state.pitch;
     $("#pitchOut").textContent = `${state.pitch} / 12`;
@@ -861,13 +862,7 @@
     $("#wallHeight").value = round(dispLen(state.wallHeight), 2);
     $("#spacing").value = state.spacing;
     $("#lumber").value = state.lumber;
-    $("#doorWidth").value = round(dispLen(state.doorWidth), 2);
-    $("#doorHeight").value = round(dispLen(state.doorHeight), 2);
-    $("#doorPos").value = state.doorPos || "center";
-    $("#doorType").value = state.doorType || "single";
-    $("#doorCount").value = state.doorCount || 1;
-    $("#windows").value = state.windowList.length;
-    renderWindowInputs();
+    renderOpenings();
     togglePitchField();
   }
 
@@ -1009,7 +1004,8 @@
       Object.assign(state, {
         id: null, name: "", purpose: "storage", roofType: "gable", pitch: 4, overhang: 12,
         width: 8, depth: 10, wallHeight: 7, spacing: 16, lumber: "2x4",
-        doorWidth: 3, doorHeight: 6.5, windows: 1,
+        doors: [{ type: "single", wall: "front", pos: "center", w: 3, h: 6.5 }],
+        windows: [{ wall: "left", pos: "center", w: 2, h: 2 }],
       });
     }
     wiz.step = 0;
@@ -1151,6 +1147,26 @@
     initWizard();
     $("#shed-form").addEventListener("input", formToState);
     $("#shed-form").addEventListener("change", formToState);
+    $("#addDoor").addEventListener("click", () => {
+      state.doors.push({ ...OPENING_DEFAULT_DOOR });
+      renderOpenings();
+      renderAll();
+    });
+    $("#addWindow").addEventListener("click", () => {
+      state.windows.push({ ...OPENING_DEFAULT_WIN });
+      renderOpenings();
+      renderAll();
+    });
+    const onDelete = (e) => {
+      const btn = e.target.closest(".op-del");
+      if (!btn) return;
+      const i = +btn.dataset.i;
+      (btn.dataset.kind === "door" ? state.doors : state.windows).splice(i, 1);
+      renderOpenings();
+      renderAll();
+    };
+    $("#doorList").addEventListener("click", onDelete);
+    $("#windowList").addEventListener("click", onDelete);
     $("#printBtn").addEventListener("click", () => window.print());
     $("#saveBtn").addEventListener("click", saveCurrent);
     $("#designsBtn").addEventListener("click", openDesigns);
