@@ -650,7 +650,7 @@
           `<div class="row"><div class="label">${it.label}${it.sub ? `<small>${it.sub}</small>` : ""}</div><div class="qty">${it.qty}</div></div>`
       )
       .join("");
-    return `<div class="group"><h3>${gr.title}<span class="count">${gr.items.length}</span></h3>${rows}</div>`;
+    return `<div class="group"><h3>${gr.title}<span class="count">${gr.items.length} item${gr.items.length === 1 ? "" : "s"}</span></h3>${rows}</div>`;
   }
 
   /* ---------- Build steps ---------- */

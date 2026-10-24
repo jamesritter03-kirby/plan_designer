@@ -244,7 +244,15 @@ select {
   display: flex;
   justify-content: space-between;
 }
-.group h3 .count { color: var(--accent); }
+.group h3 .count {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px 9px;
+}
 .row {
   display: flex;
   justify-content: space-between;
