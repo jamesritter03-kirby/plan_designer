@@ -392,10 +392,24 @@ select {
 
 /* Location map */
 .map-box { margin-top: 10px; }
+.map-embed { width: 100%; height: 300px; border: 1px solid var(--line); border-radius: 10px; display: block; }
+.map-print { display: none; }
 .map-img { width: 100%; max-height: 300px; object-fit: cover; border-radius: 10px; border: 1px solid var(--line); display: block; }
 .map-addr { margin: 8px 0 2px; font-size: 13px; font-weight: 600; }
 .map-link { font-size: 12px; color: var(--accent, #4ea1d3); text-decoration: none; }
 .map-hint { margin: 6px 0; font-size: 13px; color: var(--muted); }
+/* Address autocomplete */
+.addr-wrap { position: relative; }
+.addr-suggest {
+  position: absolute; left: 0; right: 0; top: calc(100% + 2px); z-index: 30;
+  margin: 0; padding: 4px; list-style: none;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3); max-height: 230px; overflow-y: auto;
+}
+.addr-suggest li {
+  padding: 8px 10px; font-size: 13px; border-radius: 7px; cursor: pointer; color: var(--text);
+}
+.addr-suggest li:hover { background: var(--surface-2); }
 .zip-row { margin: 10px 0; }
 .zip-row label { font-size: 13px; font-weight: 600; display: block; margin-bottom: 4px; }
 .zip-field { display: flex; align-items: center; gap: 10px; }
@@ -615,6 +629,8 @@ select {
   }
   .app-header, .tabs, .actions, .preview-head .view-toggle, .unit-toggle, .overlay, .toast, .header-right { display: none !important; }
   .step-photo-del, .step-photo-add { display: none !important; }
+  .map-embed, .addr-suggest { display: none !important; }
+  .map-print { display: block !important; width: 100%; max-height: 300px; object-fit: cover; border: 1px solid #999; border-radius: 10px; }
   html, body {
     height: auto !important;
     min-height: 0 !important;

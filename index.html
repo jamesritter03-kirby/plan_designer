@@ -139,7 +139,10 @@
           <legend>Location</legend>
           <label class="field">
             <span>Address (for map &amp; local pricing)</span>
-            <input type="text" id="addrInput" placeholder="123 Main St, City, ST" autocomplete="off" />
+            <div class="addr-wrap">
+              <input type="text" id="addrInput" placeholder="Start typing an address…" autocomplete="off" />
+              <ul id="addrSuggest" class="addr-suggest" hidden></ul>
+            </div>
           </label>
           <button type="button" id="findAddr" class="op-add">📍 Find on map</button>
           <div id="mapBox" class="map-box"></div>

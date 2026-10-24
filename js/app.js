@@ -4,7 +4,7 @@
 
   const FT_PER_M = 3.280839895;
   const IN_PER_M = 39.3700787;
-  const APP_VERSION = "1.4.0";
+  const APP_VERSION = "1.5.0";
   const STORE_KEY = "shedPlanner.designs.v1";
   const SEEN_KEY = "shedPlanner.seen.v1";
   const THEME_KEY = "shedPlanner.theme.v1";
@@ -341,29 +341,84 @@
     return { mult: map[d] || 1, label: region[d] || "US" };
   }
 
-  // Render the static map (also prints) from resolved coordinates.
+  // Render the embedded interactive map (+ a static image fallback that prints).
   function renderMap() {
     const box = $("#mapBox");
     if (!box) return;
     if (state.lat == null || state.lon == null) {
       box.innerHTML = state.address
-        ? `<p class="map-hint">Tap “Find on map” to locate “${escapeHtml(state.address)}”.</p>`
-        : `<p class="map-hint">Enter an address to show a map and local pricing.</p>`;
+        ? `<p class="map-hint">Pick a suggestion or tap “Find on map” to locate “${escapeHtml(state.address)}”.</p>`
+        : `<p class="map-hint">Start typing an address to show a map and local pricing.</p>`;
       return;
     }
     const lat = state.lat, lon = state.lon;
-    const img = `https://maps.wikimedia.org/img/osm-intl,16,${lat},${lon},600x300.png`;
+    const dx = 0.0055, dy = 0.0032; // bbox half-extents (~street zoom)
+    const bbox = `${lon - dx},${lat - dy},${lon + dx},${lat + dy}`;
+    const embed = `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${lat},${lon}`;
     const osm = `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=16/${lat}/${lon}`;
+    const staticImg = `https://maps.wikimedia.org/img/osm-intl,16,${lat},${lon},600x300.png`;
     box.innerHTML =
-      `<img class="map-img" src="${img}" alt="Map of build location" loading="lazy" onerror="this.style.display='none'" />` +
+      `<iframe class="map-embed" title="Build location map" loading="lazy" src="${embed}"></iframe>` +
+      `<img class="map-print" src="${staticImg}" alt="Map of build location" loading="lazy" onerror="this.style.display='none'" />` +
       `<p class="map-addr">📍 ${escapeHtml(state.address)}</p>` +
-      `<a class="map-link" href="${osm}" target="_blank" rel="noopener">View on OpenStreetMap ↗</a>`;
+      `<a class="map-link" href="${osm}" target="_blank" rel="noopener">View larger map ↗</a>`;
   }
 
-  // Geocode the address with OpenStreetMap Nominatim (keyless) → lat/lon + ZIP.
+  /* ---------- Address autocomplete (OpenStreetMap Nominatim) ---------- */
+  let addrTimer, addrSeq = 0;
+  function onAddrInput() {
+    const q = ($("#addrInput").value || "").trim();
+    state.address = q;
+    clearTimeout(addrTimer);
+    if (q.length < 3) { hideSuggest(); return; }
+    addrTimer = setTimeout(() => fetchSuggestions(q), 350);
+  }
+  async function fetchSuggestions(q) {
+    const seq = ++addrSeq;
+    try {
+      const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=5&q=${encodeURIComponent(q)}`;
+      const res = await fetch(url, { headers: { "Accept": "application/json" } });
+      const data = await res.json();
+      if (seq !== addrSeq) return; // a newer query superseded this one
+      renderSuggestions(data);
+    } catch {
+      hideSuggest();
+    }
+  }
+  function renderSuggestions(list) {
+    const ul = $("#addrSuggest");
+    if (!ul) return;
+    if (!list || !list.length) { hideSuggest(); return; }
+    ul.innerHTML = list
+      .map((h, i) => `<li data-i="${i}">${escapeHtml(h.display_name)}</li>`)
+      .join("");
+    ul._items = list;
+    ul.hidden = false;
+  }
+  function hideSuggest() {
+    const ul = $("#addrSuggest");
+    if (ul) { ul.hidden = true; ul.innerHTML = ""; ul._items = null; }
+  }
+  function pickSuggestion(hit) {
+    state.lat = parseFloat(hit.lat);
+    state.lon = parseFloat(hit.lon);
+    state.address = hit.display_name || state.address;
+    const pc = hit.address && hit.address.postcode ? String(hit.address.postcode).match(/\d{5}/) : null;
+    if (pc) {
+      state.zip = pc[0];
+      const zi = $("#zipInput"); if (zi) zi.value = state.zip;
+    }
+    $("#addrInput").value = state.address;
+    hideSuggest();
+    renderMap();
+    renderShopping();
+  }
+
+  // Geocode the typed address with Nominatim (used by the Find button / Enter).
   async function geocode() {
     const q = ($("#addrInput").value || "").trim();
     state.address = q;
+    hideSuggest();
     if (!q) { state.lat = state.lon = null; renderMap(); return; }
     const btn = $("#findAddr");
     if (btn) { btn.disabled = true; btn.textContent = "Searching…"; }
@@ -372,18 +427,7 @@
       const res = await fetch(url, { headers: { "Accept": "application/json" } });
       const data = await res.json();
       if (!data.length) { toast("Address not found"); renderMap(); return; }
-      const hit = data[0];
-      state.lat = parseFloat(hit.lat);
-      state.lon = parseFloat(hit.lon);
-      state.address = hit.display_name || q;
-      const pc = hit.address && hit.address.postcode ? String(hit.address.postcode).match(/\d{5}/) : null;
-      if (pc) {
-        state.zip = pc[0];
-        const zi = $("#zipInput"); if (zi) zi.value = state.zip;
-      }
-      $("#addrInput").value = state.address;
-      renderMap();
-      renderShopping();
+      pickSuggestion(data[0]);
     } catch (err) {
       console.warn("Geocode failed:", err);
       toast("Could not reach map service");
@@ -1637,9 +1681,17 @@
     if (findBtn) findBtn.addEventListener("click", geocode);
     const addrInput = $("#addrInput");
     if (addrInput) {
-      addrInput.addEventListener("change", (e) => { state.address = e.target.value; });
+      addrInput.addEventListener("input", onAddrInput);
       addrInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); geocode(); } });
+      addrInput.addEventListener("blur", () => setTimeout(hideSuggest, 150));
     }
+    const addrSuggest = $("#addrSuggest");
+    if (addrSuggest) addrSuggest.addEventListener("mousedown", (e) => {
+      const li = e.target.closest("li");
+      if (!li || !addrSuggest._items) return;
+      e.preventDefault();
+      pickSuggestion(addrSuggest._items[+li.dataset.i]);
+    });
     const zipInput = $("#zipInput");
     if (zipInput) zipInput.addEventListener("input", (e) => {
       state.zip = (e.target.value || "").replace(/\D/g, "").slice(0, 5);
