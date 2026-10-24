@@ -408,6 +408,18 @@ select {
 .view-label { font-size: 13px; font-weight: 700; margin-bottom: 4px; color: #000; }
 .view-box svg { width: 100%; height: auto; display: block; }
 
+/* Drawing-package title block & schedules */
+.title-block { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 10px; color: #000; }
+.title-block td { border: 1px solid #000; padding: 2px 5px; }
+.title-block .tb-name { font-size: 12px; font-weight: 700; }
+.title-block .tb-sheet { width: 32%; text-align: center; vertical-align: middle; font-size: 11px; }
+.schedule { width: 100%; border-collapse: collapse; margin: 2px 0 10px; font-size: 11px; color: #000; }
+.schedule th, .schedule td { border: 1px solid #000; padding: 3px 6px; text-align: left; }
+.schedule th { background: #eef2f7; }
+.sched-h { font-size: 13px; margin: 8px 0 4px; color: #000; }
+.notes-list { margin: 0; padding-left: 18px; font-size: 11px; color: #000; }
+.notes-list li { margin: 2px 0; }
+
 /* Overlays / sheets */
 .overlay {
   position: fixed;
@@ -633,6 +645,7 @@ select {
   /* Show the three elevations; hide the single interactive preview */
   .preview-card { display: none !important; }
   .print-views { display: block !important; }
+  .print-views .view-box + .view-box { break-before: page; page-break-before: always; }
   .view-box, .preview-card, .group, fieldset, .step, .op-card, .row { break-inside: avoid; page-break-inside: avoid; }
   .group, fieldset, .step, .op-card, .view-box { border-color: #999; background: #fff; color: #000; }
   .group h3, .summary-strip .chip, .step-num, .step-tag, .group h3 .count { background: #eee; color: #000; }

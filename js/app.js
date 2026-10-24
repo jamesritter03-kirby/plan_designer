@@ -4,7 +4,7 @@
 
   const FT_PER_M = 3.280839895;
   const IN_PER_M = 39.3700787;
-  const APP_VERSION = "1.3.0";
+  const APP_VERSION = "1.4.0";
   const STORE_KEY = "shedPlanner.designs.v1";
   const SEEN_KEY = "shedPlanner.seen.v1";
   const THEME_KEY = "shedPlanner.theme.v1";
@@ -352,10 +352,10 @@
       return;
     }
     const lat = state.lat, lon = state.lon;
-    const img = `https://staticmap.openstreetmap.de/staticmap.php?center=${lat},${lon}&zoom=16&size=600x300&markers=${lat},${lon},red-pushpin`;
+    const img = `https://maps.wikimedia.org/img/osm-intl,16,${lat},${lon},600x300.png`;
     const osm = `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=16/${lat}/${lon}`;
     box.innerHTML =
-      `<img class="map-img" src="${img}" alt="Map of build location" loading="lazy" />` +
+      `<img class="map-img" src="${img}" alt="Map of build location" loading="lazy" onerror="this.style.display='none'" />` +
       `<p class="map-addr">📍 ${escapeHtml(state.address)}</p>` +
       `<a class="map-link" href="${osm}" target="_blank" rel="noopener">View on OpenStreetMap ↗</a>`;
   }
@@ -459,21 +459,28 @@
     renderPrintViews(g);
   }
 
-  // Print-only: render all three elevations together, always in legible light colors.
+  // Print-only: full drawing set — elevations, section, plan, schedule, each with a title block.
   function renderPrintViews(g) {
     const host = $("#printViews");
     if (!host) return;
     const savedDim = C.dim, savedGap = C.gap, savedStud = C.stud;
     C.dim = "#51607a"; C.gap = "#f4f7fb"; C.stud = "#caa96b";
-    const views = [
-      ["Front elevation", frontElevation(g)],
-      ["Side elevation (left)", sideElevation(g)],
-      ["Top (plan) view", topView(g)],
+    const sheets = [
+      ["A1 — North Elevation (front)", frontElevation(g, "front")],
+      ["A2 — South Elevation (back)", frontElevation(g, "back")],
+      ["A3 — West Elevation (left eave)", sideElevation(g, "left")],
+      ["A4 — East Elevation (right eave)", sideElevation(g, "right")],
+      ["A5 — Building Cross-Section", crossSection(g)],
+      ["A6 — Roof / Floor Plan", topView(g)],
     ];
     C.dim = savedDim; C.gap = savedGap; C.stud = savedStud;
-    host.innerHTML = views
-      .map(([label, svg]) => `<div class="view-box"><div class="view-label">${label}</div>${svg}</div>`)
+    const total = sheets.length + 1;
+    let html = sheets
+      .map(([label, svg], i) => `<div class="view-box"><div class="view-label">${label}</div>${svg}${titleBlockHtml(label, i + 1, total)}</div>`)
       .join("");
+    html += `<div class="view-box"><div class="view-label">A${sheets.length + 1} — Schedules &amp; Notes</div>` +
+      `${scheduleHtml()}${notesHtml()}${titleBlockHtml("Schedules & Notes", total, total)}</div>`;
+    host.innerHTML = html;
   }
 
   function svgWrap(inner, vw, vh) {
@@ -512,9 +519,14 @@
   }
   function wallOpenings(wall) {
     return [
-      ...state.doors.filter((d) => d.wall === wall).map((d) => ({ ...d, kind: "door" })),
-      ...state.windows.filter((w) => w.wall === wall).map((w) => ({ ...w, kind: "win" })),
+      ...state.doors.map((d, i) => ({ ...d, kind: "door", mark: "D" + (i + 1) })).filter((d) => d.wall === wall),
+      ...state.windows.map((w, i) => ({ ...w, kind: "win", mark: "W" + (i + 1) })).filter((w) => w.wall === wall),
     ];
+  }
+
+  function markTag(x, y, txt) {
+    return `<g><circle cx="${x}" cy="${y}" r="7" fill="#fff" stroke="${C.line}" stroke-width="1"/>` +
+      `<text x="${x}" y="${y + 3}" font-size="8" text-anchor="middle" fill="${C.line}">${txt}</text></g>`;
   }
 
   function drawFrontDoor(type, leftFt, wFt, hFt, sx, sy) {
@@ -562,6 +574,7 @@
     layoutWall(L, wallOpenings(wall)).forEach((op) => {
       if (op.kind === "door") s += drawFrontDoor(op.type, op.left, Math.min(op.w, L), Math.min(op.h, Hmax * 0.95), sx, sy);
       else s += drawFrontWindow(op.left + op.w / 2, Math.min(op.w, L * 0.45), Math.min(op.h, Hmax * 0.6), sx, sy);
+      if (op.mark) s += markTag(sx(op.left + op.w / 2), sy(Hmax) + 12, op.mark);
     });
     return s;
   }
@@ -611,12 +624,16 @@
           ? planDoorCanonical(op.type, wPx)
           : `<rect x="${-wPx / 2}" y="-2.5" width="${wPx}" height="5" fill="#bcd6e8" stroke="${C.line}" stroke-width="1"/>`;
         s += `<g transform="translate(${t.px} ${t.py}) rotate(${t.rot})">${inner}</g>`;
+        if (op.mark) {
+          const off = { front: [0, 14], back: [0, -14], left: [-14, 0], right: [14, 0] }[wall] || [0, 14];
+          s += markTag(t.px + off[0], t.py + off[1], op.mark);
+        }
       });
     });
     return s;
   }
 
-  function frontElevation(g) {
+  function frontElevation(g, wall = "front") {
     const vw = 320, vh = 220, pad = 34;
     const maxW = state.width, maxH = g.peakHeight;
     const scale = Math.min((vw - pad * 2) / maxW, (vh - pad * 2) / maxH);
@@ -630,11 +647,12 @@
     s += `<rect x="${sx(0)}" y="${sy(H)}" width="${W * scale}" height="${H * scale}" fill="${C.wall}" stroke="${C.line}" stroke-width="2"/>`;
     // roof shape (front shows gable triangle etc.)
     s += roofFrontPath(g, sx, sy);
-    // openings on the front wall
-    s += drawElevationOpenings("front", W, H, sx, sy);
+    // openings on the chosen gable-end wall
+    s += drawElevationOpenings(wall, W, H, sx, sy);
     // dimensions
     s += dimLineH(sx(0), sx(W), yBase + 16, fmtLen(W), scale);
     s += dimLineV(x0 - 16, sy(0), sy(g.peakHeight), fmtLen(g.peakHeight));
+    s += scaleBarAt(x0, 12, scale);
     return svgWrap(s, vw, vh);
   }
 
@@ -663,7 +681,7 @@
     return `<polygon points="${sx(-oh)},${sy(H + 0.3)} ${sx(W + oh)},${sy(H)} ${sx(W + oh)},${sy(H - 0.1)} ${sx(-oh)},${sy(H + 0.2)}" ${st}/>`;
   }
 
-  function sideElevation(g) {
+  function sideElevation(g, wall = "left") {
     const vw = 320, vh = 220, pad = 34;
     const oh = state.overhang / 12;
     const maxExtent = state.depth + 2 * oh, maxH = g.peakHeight;
@@ -699,11 +717,12 @@
       const fx = sx((D / (n - 1 || 1)) * i);
       s += `<line x1="${fx}" y1="${sy(H)}" x2="${fx}" y2="${sy(H) - 5}" stroke="${C.line}" stroke-width="1" opacity="0.45"/>`;
     }
-    // openings on the left side wall (each its own size), laid out along the depth
-    s += drawElevationOpenings("left", D, H, sx, sy);
+    // openings on the chosen eave-side wall (each its own size), laid out along the depth
+    s += drawElevationOpenings(wall, D, H, sx, sy);
     s += dimLineH(sx(0), sx(D), yBase + 16, fmtLen(D), scale);
     s += dimLineV(sx(-oh) - 14, sy(0), sy(top), fmtLen(top));
     s += `<text x="${sx(D / 2)}" y="${sy(top) + 13}" fill="#04121c" font-size="9" text-anchor="middle">ridge · ${n} rafters @ ${state.spacing}" O.C.</text>`;
+    s += scaleBarAt(x0, 12, scale);
     return svgWrap(s, vw, vh);
   }
 
@@ -739,6 +758,8 @@
     s += dimLineH(sx(0), sx(W), sy(0) - 14, fmtLen(W), scale);
     s += dimLineV(sx(0) - 14, sy(0), sy(D), fmtLen(D));
     s += `<text x="${sx(W / 2)}" y="${sy(D / 2)}" fill="${C.line}" font-size="10" text-anchor="middle" opacity="0.7">${nj} joists @ ${state.spacing}" O.C.</text>`;
+    s += compassRose(vw - 22, 24, 9);
+    s += scaleBarAt(x0, vh - 8, scale);
     return svgWrap(s, vw, vh);
   }
 
@@ -817,6 +838,121 @@
       `<line x1="${x - 4}" y1="${y1}" x2="${x + 4}" y2="${y1}" stroke="${C.dim}" stroke-width="1"/>` +
       `<line x1="${x - 4}" y1="${y2}" x2="${x + 4}" y2="${y2}" stroke="${C.dim}" stroke-width="1"/>` +
       `<text x="${x - 6}" y="${(y1 + y2) / 2}" fill="${C.dim}" font-size="10" text-anchor="middle" transform="rotate(-90 ${x - 6} ${(y1 + y2) / 2})">${label}</text>`;
+  }
+
+  // Graphic scale bar — stays accurate at any print size because it is in drawing units.
+  function scaleBarAt(xPix, yPix, scale) {
+    const unitFt = state.units === "metric" ? FT_PER_M : 2; // 1 m or 2 ft
+    const w = unitFt * scale;
+    const label = state.units === "metric" ? "1 m" : "2 ft";
+    let s = `<g font-size="8" fill="${C.dim}">`;
+    s += `<rect x="${xPix}" y="${yPix}" width="${w / 2}" height="4" fill="${C.line}"/>`;
+    s += `<rect x="${xPix + w / 2}" y="${yPix}" width="${w / 2}" height="4" fill="#fff" stroke="${C.line}" stroke-width="0.6"/>`;
+    s += `<rect x="${xPix}" y="${yPix}" width="${w}" height="4" fill="none" stroke="${C.line}" stroke-width="0.6"/>`;
+    s += `<text x="${xPix}" y="${yPix - 2}">0</text>`;
+    s += `<text x="${xPix + w}" y="${yPix - 2}" text-anchor="middle">${label}</text>`;
+    s += `</g>`;
+    return s;
+  }
+
+  function compassRose(cx, cy, r) {
+    return `<g stroke="${C.line}" stroke-width="1" font-size="8" text-anchor="middle">` +
+      `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none"/>` +
+      `<polygon points="${cx},${cy - r} ${cx - 3},${cy} ${cx + 3},${cy}" fill="${C.line}"/>` +
+      `<polygon points="${cx},${cy + r} ${cx - 3},${cy} ${cx + 3},${cy}" fill="#fff"/>` +
+      `<text x="${cx}" y="${cy - r - 2}" fill="${C.line}">N</text>` +
+      `<text x="${cx}" y="${cy + r + 8}" fill="${C.line}">S</text>` +
+      `<text x="${cx + r + 6}" y="${cy + 3}" fill="${C.line}">E</text>` +
+      `<text x="${cx - r - 6}" y="${cy + 3}" fill="${C.line}">W</text></g>`;
+  }
+
+  // Cross-section through the width: foundation, walls, roof framing, pitch triangle.
+  function crossSection(g) {
+    const vw = 320, vh = 230, pad = 38;
+    const maxW = state.width, maxH = g.peakHeight;
+    const scale = Math.min((vw - pad * 2) / maxW, (vh - pad * 2) / maxH);
+    const x0 = (vw - maxW * scale) / 2;
+    const yBase = vh - pad;
+    const sx = (ft) => x0 + ft * scale;
+    const sy = (ft) => yBase - ft * scale;
+    const W = state.width, H = state.wallHeight, peak = g.peakHeight;
+    const prof = frontProfile(g);
+    let s = "";
+    // ground line with hatch
+    s += `<line x1="${sx(-0.5)}" y1="${sy(0)}" x2="${sx(W + 0.5)}" y2="${sy(0)}" stroke="${C.dim}" stroke-width="1.5"/>`;
+    for (let gx = sx(-0.5); gx < sx(W + 0.5); gx += 7) {
+      s += `<line x1="${gx}" y1="${sy(0)}" x2="${gx - 5}" y2="${sy(0) + 6}" stroke="${C.dim}" stroke-width="1" opacity="0.55"/>`;
+    }
+    // floor platform band (skid + joist + deck)
+    s += `<rect x="${sx(0)}" y="${sy(0) - 6}" width="${W * scale}" height="6" fill="${C.stud}" stroke="${C.line}" stroke-width="1"/>`;
+    // walls (section-cut studs, ~3.5")
+    const t = Math.max(3, 0.3 * scale);
+    s += `<rect x="${sx(0)}" y="${sy(H)}" width="${t}" height="${H * scale}" fill="${C.wall}" stroke="${C.line}" stroke-width="1.2"/>`;
+    s += `<rect x="${sx(W) - t}" y="${sy(H)}" width="${t}" height="${H * scale}" fill="${C.wall}" stroke="${C.line}" stroke-width="1.2"/>`;
+    // top plate
+    s += `<line x1="${sx(0)}" y1="${sy(H)}" x2="${sx(W)}" y2="${sy(H)}" stroke="${C.line}" stroke-width="2"/>`;
+    // roof framing outline (rafters)
+    const roofPts = prof.filter((p) => p.z >= H - 1e-6).map((p) => `${sx(p.x)},${sy(p.z)}`).join(" ");
+    s += `<polyline points="${roofPts}" fill="none" stroke="${C.roof}" stroke-width="2.5" stroke-linejoin="round"/>`;
+    // collar tie for gable/gambrel
+    if (state.roofType === "gable") {
+      const tieZ = H + (peak - H) * 0.55;
+      const rx = ((peak - tieZ) / (peak - H || 1)) * (W / 2);
+      s += `<line x1="${sx(W / 2 - rx)}" y1="${sy(tieZ)}" x2="${sx(W / 2 + rx)}" y2="${sy(tieZ)}" stroke="${C.line}" stroke-width="1.6" opacity="0.65"/>`;
+    }
+    // rise / run reference triangle
+    const apexX = state.roofType === "saltbox" ? W * 0.4 : state.roofType === "lean-to" ? 0 : W / 2;
+    if (state.roofType !== "flat") {
+      s += `<line x1="${sx(apexX)}" y1="${sy(peak)}" x2="${sx(W)}" y2="${sy(peak)}" stroke="${C.line}" stroke-width="1" stroke-dasharray="4 3" opacity="0.6"/>`;
+      s += `<line x1="${sx(W)}" y1="${sy(peak)}" x2="${sx(W)}" y2="${sy(H)}" stroke="${C.line}" stroke-width="1" stroke-dasharray="4 3" opacity="0.6"/>`;
+    }
+    const pitchLabel = state.roofType === "flat" ? "flat (drainage slope)" : `${state.pitch}/12 · ${fmtAng(g.thetaDeg)}`;
+    s += `<text x="${sx(W / 2)}" y="${sy(H) + 13}" fill="${C.line}" font-size="9" text-anchor="middle">roof pitch ${pitchLabel}</text>`;
+    // dimensions
+    s += dimLineH(sx(0), sx(W), yBase + 16, fmtLen(W), scale);
+    s += dimLineV(x0 - 16, sy(0), sy(H), fmtLen(H) + " wall");
+    s += scaleBarAt(x0, 12, scale);
+    return svgWrap(s, vw, vh);
+  }
+
+  const ROOF_NAMES = { gable: "Gable", "lean-to": "Lean-to", saltbox: "Saltbox", gambrel: "Gambrel", flat: "Flat" };
+
+  // Title block strip shown under each printed sheet.
+  function titleBlockHtml(sheetName, no, total) {
+    const g = geometry();
+    const date = new Date().toLocaleDateString();
+    const sz = `${fmtLen(state.width)} × ${fmtLen(state.depth)} × ${fmtLen(g.peakHeight)} peak`;
+    const name = escapeHtml(state.name || "Shed Plan");
+    const addr = escapeHtml(state.address || "—");
+    return `<table class="title-block"><tbody>` +
+      `<tr><td class="tb-name" colspan="2">${name}</td><td class="tb-sheet" rowspan="3">${escapeHtml(sheetName.replace(/^A\d+\s*—\s*/, ""))}<br><b>Sheet ${no} / ${total}</b></td></tr>` +
+      `<tr><td>Size: ${sz}</td><td>Roof: ${ROOF_NAMES[state.roofType]} · ${roofCover().label}</td></tr>` +
+      `<tr><td>Location: ${addr}</td><td>Date: ${date} · v${APP_VERSION}</td></tr>` +
+      `</tbody></table>`;
+  }
+
+  // Door & window schedule keyed to the D#/W# marks on the drawings.
+  function scheduleHtml() {
+    const rows = [];
+    state.doors.forEach((d, i) => rows.push(
+      `<tr><td>D${i + 1}</td><td>Door — ${DOOR_LABELS[d.type]}</td><td>${fmtLen(d.w)} × ${fmtLen(d.h)}</td><td>${d.wall}</td><td>${d.pos}</td></tr>`));
+    state.windows.forEach((w, i) => rows.push(
+      `<tr><td>W${i + 1}</td><td>Window</td><td>${fmtLen(w.w)} × ${fmtLen(w.h)}</td><td>${w.wall}</td><td>${w.pos}</td></tr>`));
+    return `<h3 class="sched-h">Door &amp; Window Schedule</h3>` +
+      `<table class="schedule"><thead><tr><th>Mark</th><th>Type</th><th>Size (W × H)</th><th>Wall</th><th>Position</th></tr></thead>` +
+      `<tbody>${rows.join("")}</tbody></table>`;
+  }
+
+  function notesHtml() {
+    const g = geometry();
+    const items = [
+      `Framing: ${state.lumber} studs/rafters at ${state.spacing}" O.C.`,
+      `Roof: ${ROOF_NAMES[state.roofType]} · ${roofCover().label} · ${state.roofType === "flat" ? "drainage slope" : state.pitch + "/12 (" + fmtAng(g.thetaDeg) + ")"} · ${round(dispSmall(state.overhang), 1)}${state.units === "metric" ? " cm" : '"'} overhang.`,
+      `Footprint ${fmtLen(state.width)} × ${fmtLen(state.depth)}, wall height ${fmtLen(state.wallHeight)}, peak ${fmtLen(g.peakHeight)}.`,
+      `Dimensions are nominal. Verify against local building codes and permit requirements before construction.`,
+      `All cut angles are listed on the Cut Sheet tab. Fasteners and flashing per manufacturer instructions.`,
+    ];
+    return `<h3 class="sched-h">General Notes</h3><ol class="notes-list">${items.map((n) => `<li>${n}</li>`).join("")}</ol>`;
   }
 
   /* ---------- Render lists ---------- */
