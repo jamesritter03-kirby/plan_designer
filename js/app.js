@@ -4,7 +4,7 @@
 
   const FT_PER_M = 3.280839895;
   const IN_PER_M = 39.3700787;
-  const APP_VERSION = "1.6.1";
+  const APP_VERSION = "1.6.2";
   const STORE_KEY = "shedPlanner.designs.v1";
   const SEEN_KEY = "shedPlanner.seen.v1";
   const THEME_KEY = "shedPlanner.theme.v1";
@@ -543,11 +543,20 @@
       ["A6 — Roof / Floor Plan", topView(g)],
     ];
     C.dim = savedDim; C.gap = savedGap; C.stud = savedStud;
-    const total = sheets.length + 1;
+    const hasCuts = g.rafters && g.rafters.length;
+    const total = sheets.length + (hasCuts ? 2 : 1);
     let html = sheets
       .map(([label, svg], i) => `<div class="view-box"><div class="view-label">${label}</div>${svg}${titleBlockHtml(label, i + 1, total)}</div>`)
       .join("");
-    html += `<div class="view-box"><div class="view-label">A${sheets.length + 1} — Schedules &amp; Notes</div>` +
+    // rafter cut-detail sheet (same diagrams as the Cut Sheet tab)
+    if (hasCuts) {
+      const cutNo = sheets.length + 1;
+      const diagrams = g.rafters
+        .map((r) => `<div class="cut-detail"><div class="view-label">${r.name} · plumb ${fmtAng(r.plumb)} · seat ${fmtAng(r.seat)}</div>${rafterCutDiagram(r.plumb, r.seat)}</div>`)
+        .join("");
+      html += `<div class="view-box"><div class="view-label">A${cutNo} — Rafter Cut Details</div>${diagrams}${titleBlockHtml("Rafter Cut Details", cutNo, total)}</div>`;
+    }
+    html += `<div class="view-box"><div class="view-label">A${total} — Schedules &amp; Notes</div>` +
       `${scheduleHtml()}${notesHtml()}${titleBlockHtml("Schedules & Notes", total, total)}</div>`;
     return html;
   }

@@ -522,6 +522,9 @@ select {
 }
 .drawings-view .view-label { font-size: 13px; font-weight: 700; margin-bottom: 4px; color: #000; }
 .drawings-view .view-box svg { width: 100%; height: auto; display: block; }
+.cut-detail { margin-bottom: 10px; }
+.cut-detail .view-label { font-size: 12px; font-weight: 600; }
+.cut-detail svg { width: 100%; max-width: 360px; height: auto; display: block; }
 
 /* Wizard */
 .wizard-sheet { min-height: 60vh; }
