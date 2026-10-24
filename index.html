@@ -112,7 +112,20 @@
         <fieldset>
           <legend>Openings</legend>
           <label class="field">
-            <span>Door width (<em class="u-len">ft</em>)</span>
+            <span>Door type</span>
+            <select id="doorType">
+              <option value="single">Single swing</option>
+              <option value="double">Double doors</option>
+              <option value="barn">Barn / sliding</option>
+              <option value="overhead">Overhead / roll-up</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Number of doors</span>
+            <input type="number" id="doorCount" value="1" min="1" max="3" step="1" inputmode="numeric" />
+          </label>
+          <label class="field">
+            <span>Door width (<em class="u-len">ft</em>, each)</span>
             <input type="number" id="doorWidth" value="3" min="0" step="0.5" inputmode="decimal" />
           </label>
           <label class="field">
@@ -120,7 +133,7 @@
             <input type="number" id="doorHeight" value="6.5" min="0" step="0.5" inputmode="decimal" />
           </label>
           <label class="field">
-            <span>Door position (front wall)</span>
+            <span>Door position (single door)</span>
             <select id="doorPos">
               <option value="left">Left</option>
               <option value="center" selected>Center</option>
@@ -131,14 +144,10 @@
             <span>Number of windows</span>
             <input type="number" id="windows" value="1" min="0" max="6" step="1" inputmode="numeric" />
           </label>
-          <label class="field">
-            <span>Window width (<em class="u-len">ft</em>)</span>
-            <input type="number" id="winWidth" value="2" min="0.5" step="0.5" inputmode="decimal" />
-          </label>
-          <label class="field">
-            <span>Window height (<em class="u-len">ft</em>)</span>
-            <input type="number" id="winHeight" value="2" min="0.5" step="0.5" inputmode="decimal" />
-          </label>
+          <div class="field">
+            <span>Window sizes</span>
+            <div id="windowSizes" class="win-sizes"></div>
+          </div>
         </fieldset>
       </form>
     </section>

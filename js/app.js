@@ -25,9 +25,12 @@
     doorWidth: 3, // ft
     doorHeight: 6.5, // ft
     doorPos: "center",
+    doorType: "single",
+    doorCount: 1,
     windows: 1,
-    winWidth: 2, // ft
+    winWidth: 2, // ft (legacy default, migrated into windowList)
     winHeight: 2, // ft
+    windowList: [{ w: 2, h: 2 }],
     view: "front",
   };
 
@@ -203,20 +206,21 @@
     });
 
     // Walls
+    const winCount = state.windowList.length;
     const studs =
       studsForWall(W) * 2 + studsForWall(D) * 2 +
       3 /*extra corner studs*/ +
-      4 /*door framing*/ +
-      state.windows * 6;
+      state.doorCount * 4 /*door framing*/ +
+      winCount * 6;
     groups.push({
       title: "Walls",
       items: [
         { label: `Bottom plate — PT ${state.lumber}`, sub: `wall perimeter`, qty: fmtTotal(perim) },
         { label: `Top plate (doubled) — ${state.lumber}`, sub: `2× perimeter`, qty: fmtTotal(perim * 2) },
         { label: `Studs — ${state.lumber}`, sub: `${state.spacing}" O.C. + corners & openings`, qty: `${studs} × ${fmtLen(H)}` },
-        { label: `Door header — 2×6 (×2)`, sub: `over door opening`, qty: `2 × ${fmtLen(state.doorWidth + 0.5)}` },
-        ...(state.windows > 0
-          ? [{ label: `Window headers — 2×6 (×2 each)`, sub: `${state.windows} window(s)`, qty: `${state.windows * 2} pcs` }]
+        { label: `Door headers — 2×6 (×2 each)`, sub: `${state.doorCount} ${DOOR_LABELS[state.doorType]} opening(s)${state.doorType === "overhead" || effDoorWidth() > 5 ? " — size up to 2×10/LVL" : ""}`, qty: `${state.doorCount * 2} pcs` },
+        ...(winCount > 0
+          ? [{ label: `Window headers — 2×6 (×2 each)`, sub: `${winCount} window(s)`, qty: `${winCount * 2} pcs` }]
           : []),
         { label: `Wall sheathing — 7⁄16" OSB`, sub: `4×8 sheets`, qty: `${Math.ceil((perim * H) / 32)} sheets` },
       ],
@@ -246,8 +250,8 @@
         { label: `Roofing — shingles or metal`, sub: `cover roof area`, qty: `≈ ${Math.ceil(roofArea)} sq ft` },
         { label: `Roofing felt / underlayment`, sub: `under roofing`, qty: `≈ ${Math.ceil(roofArea)} sq ft` },
         { label: `House wrap`, sub: `walls`, qty: `≈ ${Math.ceil(perim * H)} sq ft` },
-        { label: `Exterior door`, sub: `${fmtLen(state.doorWidth)} × ${fmtLen(state.doorHeight)}, ${state.doorPos}`, qty: `1` },
-        { label: `Windows`, sub: `${fmtLen(state.winWidth)} × ${fmtLen(state.winHeight)} each`, qty: `${state.windows}` },
+        { label: `${state.doorCount} × ${DOOR_LABELS[state.doorType]} door`, sub: `${fmtLen(effDoorWidth())} × ${fmtLen(state.doorHeight)} each${state.doorCount <= 1 ? ", " + state.doorPos : ""}`, qty: `${state.doorCount}` },
+        { label: `Windows`, sub: state.windowList.map((w) => `${fmtLen(w.w)}×${fmtLen(w.h)}`).join(", ") || "none", qty: `${state.windowList.length}` },
         { label: `Framing nails / screws, joist hangers, hurricane ties`, sub: `assorted`, qty: `as needed` },
       ],
     });
@@ -317,6 +321,10 @@
   /* ---------- SVG preview ---------- */
   function renderPreview() {
     const stage = $("#preview");
+    const light = document.documentElement.getAttribute("data-theme") === "light";
+    C.dim = light ? "#51607a" : "#9fb2ce";
+    C.gap = light ? "#f4f7fb" : "#0d1524";
+    C.stud = light ? "#caa96b" : "#e0cda4";
     const g = geometry();
     const svg = state.view === "front" ? frontElevation(g) : state.view === "side" ? sideElevation(g) : topView(g);
     stage.innerHTML = svg;
@@ -329,7 +337,125 @@
   function svgWrap(inner, vw, vh) {
     return `<svg viewBox="0 0 ${vw} ${vh}" xmlns="http://www.w3.org/2000/svg" role="img">${inner}</svg>`;
   }
-  const C = { wall: "#c9b28a", wall2: "#a98f63", line: "#1b2a3a", roof: "#4ea1d3", dim: "#9fb2ce", door: "#2c4066", stud: "#e0cda4" };
+  const C = { wall: "#c9b28a", wall2: "#a98f63", line: "#1b2a3a", roof: "#4ea1d3", dim: "#9fb2ce", door: "#2c4066", stud: "#e0cda4", gap: "#0d1524" };
+
+  const DOOR_LABELS = { single: "single swing", double: "double", barn: "barn / sliding", overhead: "overhead roll-up" };
+
+  function effDoorWidth() {
+    const W = state.width, n = state.doorCount;
+    const cap = (W - (n + 1) * 0.3) / n;
+    return Math.max(0.5, Math.min(state.doorWidth, cap > 0 ? cap : W / (n + 1)));
+  }
+  function doorLayout() {
+    const W = state.width, n = state.doorCount, dw = effDoorWidth();
+    const out = [];
+    if (n <= 1) {
+      const margin = Math.min(0.5, W * 0.06);
+      const left = state.doorPos === "left" ? margin : state.doorPos === "right" ? W - margin - dw : W / 2 - dw / 2;
+      out.push({ left, w: dw });
+    } else {
+      const gap = (W - n * dw) / (n + 1);
+      for (let i = 0; i < n; i++) out.push({ left: gap * (i + 1) + dw * i, w: dw });
+    }
+    return out;
+  }
+  function freeSegments(W, doors, pad) {
+    const occ = doors.map((d) => [Math.max(0, d.left - pad), Math.min(W, d.left + d.w + pad)]).sort((a, b) => a[0] - b[0]);
+    const segs = [];
+    let cursor = 0;
+    for (const [a, b] of occ) {
+      if (a > cursor) segs.push({ a: cursor, b: a, cursor });
+      cursor = Math.max(cursor, b);
+    }
+    if (cursor < W) segs.push({ a: cursor, b: W, cursor });
+    return segs;
+  }
+  function placeFrontWindows(W, doors, winList) {
+    const pad = 0.25;
+    const segs = freeSegments(W, doors, 0.15);
+    segs.forEach((s) => (s.cursor = s.a));
+    const placed = [];
+    winList.forEach((win) => {
+      if (!segs.length) return;
+      const seg = segs.reduce((m, s) => (s.b - s.cursor > m.b - m.cursor ? s : m), segs[0]);
+      const room = seg.b - seg.cursor - pad;
+      if (room < 0.6) return;
+      const wW = Math.min(win.w, room, W * 0.45);
+      const cx = seg.cursor + pad / 2 + wW / 2;
+      placed.push({ cx, w: wW, h: win.h });
+      seg.cursor = cx + wW / 2 + pad / 2;
+    });
+    return placed;
+  }
+  function drawFrontDoor(type, leftFt, wFt, hFt, sx, sy) {
+    const x = sx(leftFt), w = sx(leftFt + wFt) - sx(leftFt), yTop = sy(hFt), yBot = sy(0), h = yBot - yTop;
+    let s = "";
+    if (type === "overhead") {
+      s += `<rect x="${x}" y="${yTop}" width="${w}" height="${h}" fill="#9fb3c4" stroke="${C.line}" stroke-width="1.5"/>`;
+      for (let i = 1; i < 4; i++) {
+        const yy = yTop + (h * i) / 4;
+        s += `<line x1="${x}" y1="${yy}" x2="${x + w}" y2="${yy}" stroke="${C.line}" stroke-width="1" opacity="0.7"/>`;
+      }
+      return s;
+    }
+    if (type === "barn") {
+      s += `<line x1="${x - 6}" y1="${yTop - 4}" x2="${x + w + 6}" y2="${yTop - 4}" stroke="${C.line}" stroke-width="2"/>`;
+      s += `<rect x="${x}" y="${yTop}" width="${w}" height="${h}" fill="${C.door}" stroke="${C.line}" stroke-width="1.5"/>`;
+      s += `<line x1="${x}" y1="${yTop}" x2="${x + w}" y2="${yBot}" stroke="${C.dim}" stroke-width="1.1" opacity="0.6"/>`;
+      s += `<line x1="${x + w}" y1="${yTop}" x2="${x}" y2="${yBot}" stroke="${C.dim}" stroke-width="1.1" opacity="0.6"/>`;
+      return s;
+    }
+    if (type === "double") {
+      s += `<rect x="${x}" y="${yTop}" width="${w}" height="${h}" fill="${C.door}" stroke="${C.line}" stroke-width="1.5"/>`;
+      s += `<line x1="${x + w / 2}" y1="${yTop}" x2="${x + w / 2}" y2="${yBot}" stroke="${C.line}" stroke-width="1.5"/>`;
+      s += `<circle cx="${x + w / 2 - 4}" cy="${(yTop + yBot) / 2}" r="2.2" fill="${C.dim}"/>`;
+      s += `<circle cx="${x + w / 2 + 4}" cy="${(yTop + yBot) / 2}" r="2.2" fill="${C.dim}"/>`;
+      return s;
+    }
+    s += `<rect x="${x}" y="${yTop}" width="${w}" height="${h}" fill="${C.door}" stroke="${C.line}" stroke-width="1.5"/>`;
+    const knob = state.doorPos === "right" && state.doorCount <= 1 ? x + 8 : x + w - 8;
+    s += `<circle cx="${knob}" cy="${(yTop + yBot) / 2}" r="2.5" fill="${C.dim}"/>`;
+    return s;
+  }
+  function drawFrontWindow(cxFt, wFt, hFt, sx, sy) {
+    const ww = sx(cxFt + wFt / 2) - sx(cxFt - wFt / 2);
+    const wh = sy(0) - sy(hFt);
+    const wx = sx(cxFt) - ww / 2;
+    const wy = sy(state.wallHeight * 0.5 + hFt / 2);
+    let s = `<rect x="${wx}" y="${wy}" width="${ww}" height="${wh}" fill="#bcd6e8" stroke="${C.line}" stroke-width="1.5"/>`;
+    s += `<line x1="${wx + ww / 2}" y1="${wy}" x2="${wx + ww / 2}" y2="${wy + wh}" stroke="${C.line}" stroke-width="1"/>`;
+    s += `<line x1="${wx}" y1="${wy + wh / 2}" x2="${wx + ww}" y2="${wy + wh / 2}" stroke="${C.line}" stroke-width="1"/>`;
+    return s;
+  }
+  function drawPlanDoor(type, leftFt, wFt, sx, sy, D) {
+    const x1 = sx(leftFt), x2 = sx(leftFt + wFt), yb = sy(D), w = x2 - x1;
+    let s = `<rect x="${x1}" y="${yb - 3}" width="${w}" height="6" fill="${C.gap}" stroke="none"/>`;
+    if (type === "overhead") {
+      for (let i = 0; i < 3; i++) {
+        const xx = x1 + (w * (i + 0.5)) / 3;
+        s += `<line x1="${xx}" y1="${yb}" x2="${xx}" y2="${yb - 14}" stroke="${C.door}" stroke-width="1.3" stroke-dasharray="3 3" opacity="0.85"/>`;
+      }
+      return s;
+    }
+    if (type === "barn") {
+      s += `<line x1="${x1 - 4}" y1="${yb - 5}" x2="${x2 + w * 0.9 + 4}" y2="${yb - 5}" stroke="${C.line}" stroke-width="1.5"/>`;
+      s += `<rect x="${x2}" y="${yb - 7}" width="${w * 0.9}" height="4" fill="${C.door}" stroke="${C.line}" stroke-width="1"/>`;
+      return s;
+    }
+    if (type === "double") {
+      const mid = sx(leftFt + wFt / 2);
+      s += `<path d="M ${x1} ${yb} A ${w / 2} ${w / 2} 0 0 1 ${mid} ${yb - w / 2}" fill="none" stroke="${C.door}" stroke-width="1.3" opacity="0.8"/>`;
+      s += `<path d="M ${x2} ${yb} A ${w / 2} ${w / 2} 0 0 0 ${mid} ${yb - w / 2}" fill="none" stroke="${C.door}" stroke-width="1.3" opacity="0.8"/>`;
+      s += `<line x1="${x1}" y1="${yb}" x2="${x1}" y2="${yb - w / 2}" stroke="${C.door}" stroke-width="1.6"/>`;
+      s += `<line x1="${x2}" y1="${yb}" x2="${x2}" y2="${yb - w / 2}" stroke="${C.door}" stroke-width="1.6"/>`;
+      return s;
+    }
+    const hingeLeft = !(state.doorPos === "right" && state.doorCount <= 1);
+    const hx = hingeLeft ? x1 : x2;
+    s += `<path d="M ${x1} ${yb} A ${w} ${w} 0 0 1 ${x2} ${yb}" fill="none" stroke="${C.door}" stroke-width="1.3" opacity="0.8"/>`;
+    s += `<line x1="${hx}" y1="${yb}" x2="${hx}" y2="${yb - w}" stroke="${C.door}" stroke-width="2"/>`;
+    return s;
+  }
 
   function frontElevation(g) {
     const vw = 320, vh = 220, pad = 34;
@@ -345,34 +471,13 @@
     s += `<rect x="${sx(0)}" y="${sy(H)}" width="${W * scale}" height="${H * scale}" fill="${C.wall}" stroke="${C.line}" stroke-width="2"/>`;
     // roof shape (front shows gable triangle etc.)
     s += roofFrontPath(g, sx, sy);
-    // door (position: left / center / right on the front wall)
-    const dw = Math.min(state.doorWidth, W * 0.8), dh = Math.min(state.doorHeight, H * 0.95);
-    const margin = Math.min(0.5, W * 0.06);
-    const doorLeftFt =
-      state.doorPos === "left" ? margin :
-      state.doorPos === "right" ? W - margin - dw :
-      W / 2 - dw / 2;
-    const dx = sx(doorLeftFt);
-    s += `<rect x="${dx}" y="${sy(dh)}" width="${dw * scale}" height="${dh * scale}" fill="${C.door}" stroke="${C.line}" stroke-width="1.5"/>`;
-    const knobSide = state.doorPos === "right" ? dx + 8 : dx + dw * scale - 8;
-    s += `<circle cx="${knobSide}" cy="${sy(dh / 2)}" r="2.5" fill="${C.dim}"/>`;
-    // windows sized from the inputs, spread across the wall avoiding the door
-    const nWin = Math.min(state.windows, 4);
-    const ww = Math.min(state.winWidth, W * 0.3) * scale;
-    const wh = Math.min(state.winHeight, H * 0.6) * scale;
-    const wy = sy(H * 0.5 + state.winHeight / 2);
-    for (let i = 0; i < nWin; i++) {
-      const slot = (W / (nWin + 1)) * (i + 1);
-      let wcx = sx(slot);
-      // nudge away from the door if overlapping
-      if (Math.abs(slot - (doorLeftFt + dw / 2)) < dw / 2 + state.winWidth / 2) {
-        wcx = state.doorPos === "right" ? sx(Math.max(margin, slot - dw)) : sx(Math.min(W - margin, slot + dw));
-      }
-      const wx = wcx - ww / 2;
-      s += `<rect x="${wx}" y="${wy}" width="${ww}" height="${wh}" fill="#bcd6e8" stroke="${C.line}" stroke-width="1.5"/>`;
-      s += `<line x1="${wx + ww / 2}" y1="${wy}" x2="${wx + ww / 2}" y2="${wy + wh}" stroke="${C.line}" stroke-width="1"/>`;
-      s += `<line x1="${wx}" y1="${wy + wh / 2}" x2="${wx + ww}" y2="${wy + wh / 2}" stroke="${C.line}" stroke-width="1"/>`;
-    }
+    // doors (type + count) on the front wall
+    const doors = doorLayout();
+    const dh = Math.min(state.doorHeight, H * 0.95);
+    doors.forEach((d) => (s += drawFrontDoor(state.doorType, d.left, d.w, dh, sx, sy)));
+    // windows — each its own size, packed into free wall space
+    const wins = placeFrontWindows(W, doors, state.windowList);
+    wins.forEach((win) => (s += drawFrontWindow(win.cx, win.w, Math.min(win.h, H * 0.6), sx, sy)));
     // dimensions
     s += dimLineH(sx(0), sx(W), yBase + 16, fmtLen(W), scale);
     s += dimLineV(x0 - 16, sy(0), sy(g.peakHeight), fmtLen(g.peakHeight));
@@ -440,16 +545,18 @@
       const fx = sx((D / (n - 1 || 1)) * i);
       s += `<line x1="${fx}" y1="${sy(H)}" x2="${fx}" y2="${sy(H) - 5}" stroke="${C.line}" stroke-width="1" opacity="0.45"/>`;
     }
-    // a window on the side wall
-    if (state.windows > 0) {
-      const ww = Math.min(state.winWidth, D * 0.3) * scale;
-      const wh = Math.min(state.winHeight, H * 0.6) * scale;
-      const wx = sx(D * 0.5) - ww / 2;
-      const wyy = sy(H * 0.5 + state.winHeight / 2);
+    // windows on the side wall (each its own size), spread along the depth
+    const sideWins = state.windowList.slice(0, 3);
+    sideWins.forEach((win, i) => {
+      const ww = Math.min(win.w, D * 0.3) * scale;
+      const wh = Math.min(win.h, H * 0.6) * scale;
+      const frac = sideWins.length === 1 ? 0.5 : 0.25 + (0.5 * i) / (sideWins.length - 1);
+      const wx = sx(D * frac) - ww / 2;
+      const wyy = sy(H * 0.5 + win.h / 2);
       s += `<rect x="${wx}" y="${wyy}" width="${ww}" height="${wh}" fill="#bcd6e8" stroke="${C.line}" stroke-width="1.5"/>`;
       s += `<line x1="${wx + ww / 2}" y1="${wyy}" x2="${wx + ww / 2}" y2="${wyy + wh}" stroke="${C.line}" stroke-width="1"/>`;
       s += `<line x1="${wx}" y1="${wyy + wh / 2}" x2="${wx + ww}" y2="${wyy + wh / 2}" stroke="${C.line}" stroke-width="1"/>`;
-    }
+    });
     s += dimLineH(sx(0), sx(D), yBase + 16, fmtLen(D), scale);
     s += dimLineV(sx(-oh) - 14, sy(0), sy(top), fmtLen(top));
     s += `<text x="${sx(D / 2)}" y="${sy(top) + 13}" fill="#04121c" font-size="9" text-anchor="middle">ridge · ${n} rafters @ ${state.spacing}" O.C.</text>`;
@@ -483,26 +590,24 @@
     // dashed roof-overhang (eaves) outline around the walls
     const oh = state.overhang / 12;
     s += `<rect x="${sx(-oh)}" y="${sy(-oh)}" width="${(W + 2 * oh) * scale}" height="${(D + 2 * oh) * scale}" fill="none" stroke="${C.roof}" stroke-width="1.3" stroke-dasharray="5 4" opacity="0.8"/>`;
-    // door opening on the front wall (bottom edge) with swing arc, honoring position
-    const dw = Math.min(state.doorWidth, W * 0.8);
-    const margin = Math.min(0.5, W * 0.06);
-    const dxc =
-      state.doorPos === "left" ? margin + dw / 2 :
-      state.doorPos === "right" ? W - margin - dw / 2 :
-      W / 2;
-    s += `<rect x="${sx(dxc - dw / 2)}" y="${sy(D) - 3}" width="${dw * scale}" height="6" fill="#0d1524" stroke="none"/>`;
-    const hinge = state.doorPos === "right" ? dxc + dw / 2 : dxc - dw / 2;
-    const sweep = state.doorPos === "right" ? 0 : 1;
-    s += `<path d="M ${sx(hinge)} ${sy(D)} A ${dw * scale} ${dw * scale} 0 0 ${sweep} ${sx(state.doorPos === "right" ? dxc - dw / 2 : dxc + dw / 2)} ${sy(D)}" fill="none" stroke="${C.door}" stroke-width="1.5" opacity="0.8"/>`;
-    s += `<line x1="${sx(hinge)}" y1="${sy(D)}" x2="${sx(hinge)}" y2="${sy(D) - dw * scale}" stroke="${C.door}" stroke-width="2"/>`;
-    s += `<text x="${sx(dxc)}" y="${sy(D) + 26}" fill="${C.dim}" font-size="9" text-anchor="middle">door</text>`;
-    // windows on side walls
-    for (let i = 0; i < Math.min(state.windows, 2); i++) {
-      const wy = sy(D * (i === 0 ? 0.5 : 0.3));
-      const side = i === 0 ? sx(0) : sx(W);
-      const wlen = Math.min(state.winWidth, D * 0.4) * scale;
-      s += `<rect x="${side - 3}" y="${wy - wlen / 2}" width="6" height="${wlen}" fill="#bcd6e8" stroke="${C.line}" stroke-width="1"/>`;
+    // doors on the front wall (type + count)
+    const planDoors = doorLayout();
+    planDoors.forEach((d) => (s += drawPlanDoor(state.doorType, d.left, d.w, sx, sy, D)));
+    if (state.doorType === "single" || state.doorType === "double") {
+      const dcx = planDoors[0].left + planDoors[0].w / 2;
+      s += `<text x="${sx(dcx)}" y="${sy(D) + 26}" fill="${C.dim}" font-size="9" text-anchor="middle">${state.doorCount} door${state.doorCount > 1 ? "s" : ""}</text>`;
     }
+    // windows on the side walls (each its own size)
+    state.windowList.slice(0, 4).forEach((win, i) => {
+      const onLeft = i % 2 === 0;
+      const group = Math.floor(i / 2);
+      const groups = Math.max(1, Math.ceil(Math.min(state.windowList.length, 4) / 2));
+      const frac = 0.3 + 0.4 * (groups <= 1 ? 0 : group / (groups - 1));
+      const wy = sy(D * Math.min(0.8, frac));
+      const side = onLeft ? sx(0) : sx(W);
+      const wlen = Math.min(win.w, D * 0.4) * scale;
+      s += `<rect x="${side - 3}" y="${wy - wlen / 2}" width="6" height="${wlen}" fill="#bcd6e8" stroke="${C.line}" stroke-width="1"/>`;
+    });
     s += dimLineH(sx(0), sx(W), sy(0) - 14, fmtLen(W), scale);
     s += dimLineV(sx(0) - 14, sy(0), sy(D), fmtLen(D));
     s += `<text x="${sx(W / 2)}" y="${sy(D / 2)}" fill="${C.line}" font-size="10" text-anchor="middle" opacity="0.7">${nj} joists @ ${state.spacing}" O.C.</text>`;
@@ -592,7 +697,7 @@
     steps.push({
       tag: "Walls",
       title: "Frame the four walls",
-      body: `Build each wall flat on the deck: bottom plate + top plate with ${state.lumber} studs ${state.spacing}" O.C. Frame the ${fmtLen(state.doorWidth)} door opening (king + jack studs, header) ${state.windows > 0 ? `and ${state.windows} window opening(s)` : ""}.`,
+      body: `Build each wall flat on the deck: bottom plate + top plate with ${state.lumber} studs ${state.spacing}" O.C. Frame ${state.doorCount} ${DOOR_LABELS[state.doorType]} door opening(s) at ${fmtLen(effDoorWidth())} wide (king + jack studs, header)${state.windowList.length > 0 ? ` and ${state.windowList.length} window opening(s)` : ""}.`,
     });
     steps.push({
       tag: "Walls",
@@ -649,7 +754,7 @@
     steps.push({
       tag: "Finish",
       title: "Doors, windows & trim",
-      body: `Hang the ${fmtLen(state.doorWidth)} × ${fmtLen(state.doorHeight)} door on the ${state.doorPos} of the front wall${state.windows > 0 ? ` and install ${state.windows} × ${fmtLen(state.winWidth)} × ${fmtLen(state.winHeight)} window(s)` : ""}, flashing and caulking each opening. Add corner and trim boards and fascia.`,
+      body: `Hang ${state.doorCount} ${DOOR_LABELS[state.doorType]} door(s) at ${fmtLen(effDoorWidth())} × ${fmtLen(state.doorHeight)}${state.windowList.length > 0 ? `, then install ${state.windowList.length} window(s) (${state.windowList.map((w) => `${fmtLen(w.w)}×${fmtLen(w.h)}`).join(", ")})` : ""}. Flash and caulk each opening, then add corner and trim boards and fascia.`,
     });
     steps.push({
       tag: "Finish",
@@ -695,15 +800,58 @@
     state.doorWidth = toFt(parseFloat($("#doorWidth").value) || 0);
     state.doorHeight = toFt(parseFloat($("#doorHeight").value) || 0);
     state.doorPos = $("#doorPos").value;
-    state.windows = parseInt($("#windows").value, 10) || 0;
-    state.winWidth = toFt(parseFloat($("#winWidth").value) || 0);
-    state.winHeight = toFt(parseFloat($("#winHeight").value) || 0);
+    state.doorType = $("#doorType").value;
+    state.doorCount = Math.max(1, parseInt($("#doorCount").value, 10) || 1);
+    const wantCount = Math.max(0, parseInt($("#windows").value, 10) || 0);
+    if (wantCount !== state.windowList.length) {
+      resizeWindowList(wantCount);
+      renderWindowInputs();
+    } else {
+      $$("#windowSizes .win-w").forEach((inp) => {
+        const i = +inp.dataset.i;
+        if (state.windowList[i]) state.windowList[i].w = toFt(parseFloat(inp.value) || 0);
+      });
+      $$("#windowSizes .win-h").forEach((inp) => {
+        const i = +inp.dataset.i;
+        if (state.windowList[i]) state.windowList[i].h = toFt(parseFloat(inp.value) || 0);
+      });
+    }
+    state.windows = state.windowList.length;
     $("#pitchOut").textContent = `${state.pitch} / 12`;
     togglePitchField();
     renderAll();
   }
 
+  function resizeWindowList(n) {
+    while (state.windowList.length < n) state.windowList.push({ w: 2, h: 2 });
+    if (state.windowList.length > n) state.windowList.length = n;
+  }
+
+  function normalizeWindows() {
+    if (!Array.isArray(state.windowList)) {
+      const n = state.windows || 0;
+      const w = state.winWidth || 2, h = state.winHeight || 2;
+      state.windowList = Array.from({ length: n }, () => ({ w, h }));
+    }
+    state.windows = state.windowList.length;
+  }
+
+  function renderWindowInputs() {
+    const host = $("#windowSizes");
+    if (!host) return;
+    const u = state.units === "metric" ? "m" : "ft";
+    host.innerHTML = state.windowList
+      .map(
+        (win, i) =>
+          `<div class="win-row"><span class="win-row-label">Win ${i + 1}</span>` +
+          `<label><small>W (${u})</small><input type="number" class="win-w" data-i="${i}" value="${round(dispLen(win.w), 2)}" min="0.5" step="0.5" inputmode="decimal"></label>` +
+          `<label><small>H (${u})</small><input type="number" class="win-h" data-i="${i}" value="${round(dispLen(win.h), 2)}" min="0.5" step="0.5" inputmode="decimal"></label></div>`
+      )
+      .join("") || `<p class="win-empty">No windows.</p>`;
+  }
+
   function stateToForm() {
+    normalizeWindows();
     $("#roofType").value = state.roofType;
     $("#pitch").value = state.pitch;
     $("#pitchOut").textContent = `${state.pitch} / 12`;
@@ -716,9 +864,10 @@
     $("#doorWidth").value = round(dispLen(state.doorWidth), 2);
     $("#doorHeight").value = round(dispLen(state.doorHeight), 2);
     $("#doorPos").value = state.doorPos || "center";
-    $("#windows").value = state.windows;
-    $("#winWidth").value = round(dispLen(state.winWidth), 2);
-    $("#winHeight").value = round(dispLen(state.winHeight), 2);
+    $("#doorType").value = state.doorType || "single";
+    $("#doorCount").value = state.doorCount || 1;
+    $("#windows").value = state.windowList.length;
+    renderWindowInputs();
     togglePitchField();
   }
 
@@ -981,6 +1130,7 @@
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.setAttribute("content", theme === "light" ? "#ffffff" : "#1b2a3a");
     localStorage.setItem(THEME_KEY, theme);
+    if ($("#preview") && $("#preview").childElementCount) renderPreview();
   }
   function initTheme() {
     let theme = localStorage.getItem(THEME_KEY);
