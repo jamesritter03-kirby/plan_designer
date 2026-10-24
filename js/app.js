@@ -314,7 +314,7 @@
   function renderPreview() {
     const stage = $("#preview");
     const g = geometry();
-    const svg = state.view === "front" ? frontElevation(g) : sideElevation(g);
+    const svg = state.view === "front" ? frontElevation(g) : state.view === "side" ? sideElevation(g) : topView(g);
     stage.innerHTML = svg;
     const roofNames = { gable: "Gable", "lean-to": "Lean-to", saltbox: "Saltbox", gambrel: "Gambrel", flat: "Flat" };
     $("#preview-caption").textContent =
@@ -420,6 +420,49 @@
     return svgWrap(s, vw, vh);
   }
 
+  function topView(g) {
+    const vw = 320, vh = 240, pad = 36;
+    const maxW = state.width, maxD = state.depth;
+    const scale = Math.min((vw - pad * 2) / maxW, (vh - pad * 2) / maxD);
+    const x0 = (vw - maxW * scale) / 2;
+    const y0 = (vh - maxD * scale) / 2;
+    const sx = (ft) => x0 + ft * scale;
+    const sy = (ft) => y0 + ft * scale; // depth increases downward
+    const W = state.width, D = state.depth;
+    let s = "";
+    s += `<rect x="${sx(0)}" y="${sy(0)}" width="${W * scale}" height="${D * scale}" fill="${C.wall}" stroke="${C.line}" stroke-width="2"/>`;
+    // floor joists run across the width, spaced along depth
+    const nj = Math.floor((D * 12) / state.spacing) + 1;
+    for (let i = 0; i < nj; i++) {
+      const fy = sy((D / (nj - 1 || 1)) * i);
+      s += `<line x1="${sx(0)}" y1="${fy}" x2="${sx(W)}" y2="${fy}" stroke="${C.stud}" stroke-width="1" opacity="0.7"/>`;
+    }
+    // skids run front-to-back, spaced across width (dashed)
+    const nsk = Math.max(2, Math.floor((W * 12) / 24) + 1);
+    for (let i = 0; i < nsk; i++) {
+      const fx = sx((W / (nsk - 1 || 1)) * i);
+      s += `<line x1="${fx}" y1="${sy(0)}" x2="${fx}" y2="${sy(D)}" stroke="${C.line}" stroke-width="1.5" stroke-dasharray="4 3" opacity="0.55"/>`;
+    }
+    s += `<rect x="${sx(0)}" y="${sy(0)}" width="${W * scale}" height="${D * scale}" fill="none" stroke="${C.line}" stroke-width="2.5"/>`;
+    // door opening on the front wall (bottom edge) with swing arc
+    const dw = Math.min(state.doorWidth, W * 0.8);
+    const dxc = W / 2;
+    s += `<rect x="${sx(dxc - dw / 2)}" y="${sy(D) - 3}" width="${dw * scale}" height="6" fill="#0d1524" stroke="none"/>`;
+    s += `<path d="M ${sx(dxc - dw / 2)} ${sy(D)} A ${dw * scale} ${dw * scale} 0 0 1 ${sx(dxc + dw / 2)} ${sy(D)}" fill="none" stroke="${C.door}" stroke-width="1.5" opacity="0.8"/>`;
+    s += `<line x1="${sx(dxc - dw / 2)}" y1="${sy(D)}" x2="${sx(dxc - dw / 2)}" y2="${sy(D) - dw * scale}" stroke="${C.door}" stroke-width="2"/>`;
+    s += `<text x="${sx(dxc)}" y="${sy(D) + 26}" fill="${C.dim}" font-size="9" text-anchor="middle">door</text>`;
+    // windows on side walls
+    for (let i = 0; i < Math.min(state.windows, 2); i++) {
+      const wy = sy(D * (i === 0 ? 0.5 : 0.3));
+      const side = i === 0 ? sx(0) : sx(W);
+      s += `<rect x="${side - 3}" y="${wy - (D * 0.14 * scale) / 2}" width="6" height="${D * 0.14 * scale}" fill="#bcd6e8" stroke="${C.line}" stroke-width="1"/>`;
+    }
+    s += dimLineH(sx(0), sx(W), sy(0) - 14, fmtLen(W), scale);
+    s += dimLineV(sx(0) - 14, sy(0), sy(D), fmtLen(D));
+    s += `<text x="${sx(W / 2)}" y="${sy(D / 2)}" fill="${C.line}" font-size="10" text-anchor="middle" opacity="0.7">${nj} joists @ ${state.spacing}" O.C.</text>`;
+    return svgWrap(s, vw, vh);
+  }
+
   function dimLineH(x1, x2, y, label, scale) {
     return `<line x1="${x1}" y1="${y}" x2="${x2}" y2="${y}" stroke="${C.dim}" stroke-width="1"/>` +
       `<line x1="${x1}" y1="${y - 4}" x2="${x1}" y2="${y + 4}" stroke="${C.dim}" stroke-width="1"/>` +
@@ -476,11 +519,122 @@
     return `<div class="group"><h3>${gr.title}<span class="count">${gr.items.length}</span></h3>${rows}</div>`;
   }
 
+  /* ---------- Build steps ---------- */
+  function buildSteps() {
+    const g = geometry();
+    const W = state.width, D = state.depth, H = state.wallHeight;
+    const rafterTxt = g.rafters
+      .map((r) => `${r.qty} × ${r.name.toLowerCase()} @ ${fmtLen(r.length)} (plumb ${fmtAng(r.plumb)}, seat ${fmtAng(r.seat)})`)
+      .join("; ");
+    const steps = [];
+
+    steps.push({
+      tag: "Foundation",
+      title: "Prepare a level base",
+      body: `Clear and level a ${fmtLen(W)} × ${fmtLen(D)} area. Set the pressure-treated 4×4 skids on gravel or concrete blocks, spaced evenly across the width and checked level in both directions.`,
+    });
+    steps.push({
+      tag: "Floor",
+      title: "Build the floor frame",
+      body: `Build a ${fmtLen(W)} × ${fmtLen(D)} box from 2×6 rim joists, then fill in floor joists ${state.spacing}" on center. Square the frame (equal diagonals) and fasten to the skids.`,
+    });
+    steps.push({
+      tag: "Floor",
+      title: "Deck the floor",
+      body: `Fasten ¾" plywood over the joists with the sheets running perpendicular to the joists. Stagger the seams and leave a small gap between sheets.`,
+    });
+    steps.push({
+      tag: "Walls",
+      title: "Frame the four walls",
+      body: `Build each wall flat on the deck: bottom plate + top plate with ${state.lumber} studs ${state.spacing}" O.C. Frame the ${fmtLen(state.doorWidth)} door opening (king + jack studs, header) ${state.windows > 0 ? `and ${state.windows} window opening(s)` : ""}.`,
+    });
+    steps.push({
+      tag: "Walls",
+      title: "Raise, plumb & brace the walls",
+      body: `Stand each wall, nail the bottom plate to the floor, plumb with a level and brace temporarily. Tie the corners together and add the second (doubled) top plate, overlapping at the corners.`,
+    });
+
+    if (state.roofType === "gable" || state.roofType === "saltbox") {
+      steps.push({
+        tag: "Roof",
+        title: "Set the ridge & cut rafters",
+        body: `Cut the rafters: ${rafterTxt}. Set the ridge board at ${fmtLen(g.peakHeight - H)} above the top plate, then install opposing rafters in pairs, seating each birdsmouth on the top plate.`,
+      });
+      steps.push({
+        tag: "Roof",
+        title: "Tie the rafters",
+        body: `Add collar ties across each rafter pair in the upper third to keep the walls from spreading.`,
+      });
+    } else if (state.roofType === "lean-to") {
+      steps.push({
+        tag: "Roof",
+        title: "Install the sloped rafters",
+        body: `Cut the rafters: ${rafterTxt}. The back wall is taller than the front by ${fmtLen(g.peakHeight - H)}; set rafters ${state.spacing}" O.C. with a birdsmouth over each wall.`,
+      });
+    } else if (state.roofType === "gambrel") {
+      steps.push({
+        tag: "Roof",
+        title: "Assemble the gambrel trusses",
+        body: `Build each barn truss on the ground from 4 rafters joined with plywood gussets: ${rafterTxt}. Lower slope 67.5°, upper slope 22.5°. Raise and set them ${state.spacing}" O.C.`,
+      });
+    } else {
+      steps.push({
+        tag: "Roof",
+        title: "Install the roof joists",
+        body: `Set the flat-roof joists ${state.spacing}" O.C. across the walls. Build in a slight slope toward the back/low side for drainage.`,
+      });
+    }
+
+    steps.push({
+      tag: "Roof",
+      title: "Sheathe the roof",
+      body: `Cover the rafters with 7⁄16" OSB, seams staggered, then add drip edge and underlayment (felt).`,
+    });
+    steps.push({
+      tag: "Shell",
+      title: "Sheathe & wrap the walls",
+      body: `Sheathe the walls with OSB, then staple house wrap over it, overlapping shingle-style from the bottom up.`,
+    });
+    steps.push({
+      tag: "Finish",
+      title: "Roofing",
+      body: `Install shingles or metal roofing from the eave up, following the manufacturer's overlap and fastener pattern.`,
+    });
+    steps.push({
+      tag: "Finish",
+      title: "Doors, windows & trim",
+      body: `Hang the ${fmtLen(state.doorWidth)} × ${fmtLen(state.doorHeight)} door${state.windows > 0 ? ` and install ${state.windows} window(s)` : ""}, flashing and caulking each opening. Add corner and trim boards and fascia.`,
+    });
+    steps.push({
+      tag: "Finish",
+      title: "Paint & final checks",
+      body: `Prime and paint or stain all exterior wood. Confirm the door swings freely, add any ramp or shelving, and you're done.`,
+    });
+
+    return steps;
+  }
+
+  function renderSteps() {
+    const steps = buildSteps();
+    const roofStep = steps.filter((s) => s.tag === "Roof").length;
+    $("#stepsSummary").innerHTML =
+      chip(steps.length, "steps") +
+      chip(roofStep, "roof steps") +
+      chip({ gable: "Gable", "lean-to": "Lean-to", saltbox: "Saltbox", gambrel: "Gambrel", flat: "Flat" }[state.roofType], "roof");
+    $("#buildSteps").innerHTML = steps
+      .map(
+        (s, i) =>
+          `<li class="step"><span class="step-num">${i + 1}</span><div class="step-body"><div class="step-head"><b>${s.title}</b><span class="step-tag">${s.tag}</span></div><p>${s.body}</p></div></li>`
+      )
+      .join("");
+  }
+
   /* ---------- Sync form <-> state ---------- */
   function renderAll() {
     renderPreview();
     renderShopping();
     renderCuts();
+    renderSteps();
   }
 
   function formToState() {

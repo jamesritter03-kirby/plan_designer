@@ -28,6 +28,7 @@
     <button class="tab active" data-tab="design" role="tab">Design</button>
     <button class="tab" data-tab="shopping" role="tab">Shopping</button>
     <button class="tab" data-tab="cuts" role="tab">Cut Sheet</button>
+    <button class="tab" data-tab="steps" role="tab">Build Steps</button>
   </nav>
 
   <main>
@@ -39,6 +40,7 @@
           <div class="view-toggle" role="group" aria-label="Preview view">
             <button type="button" class="view-btn active" data-view="front">Front</button>
             <button type="button" class="view-btn" data-view="side">Side</button>
+            <button type="button" class="view-btn" data-view="top">Top</button>
           </div>
         </div>
         <div id="preview" class="preview-stage"></div>
@@ -141,6 +143,16 @@
       <p class="disclaimer">
         Angles are theoretical. Cut one test piece first. Lengths do not subtract
         blade kerf or saw tolerances.
+      </p>
+    </section>
+
+    <!-- BUILD STEPS TAB -->
+    <section id="tab-steps" class="tab-panel">
+      <div class="summary-strip" id="stepsSummary"></div>
+      <ol id="buildSteps" class="steps"></ol>
+      <p class="disclaimer">
+        A general build order for a stick-framed shed. Follow local codes and the
+        manufacturer instructions for any hardware, roofing, door and windows.
       </p>
     </section>
   </main>
