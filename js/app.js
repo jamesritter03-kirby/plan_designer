@@ -4,7 +4,7 @@
 
   const FT_PER_M = 3.280839895;
   const IN_PER_M = 39.3700787;
-  const APP_VERSION = "1.7.2";
+  const APP_VERSION = "1.7.3";
   const STORE_KEY = "shedPlanner.designs.v1";
   const SEEN_KEY = "shedPlanner.seen.v1";
   const THEME_KEY = "shedPlanner.theme.v1";
@@ -1961,6 +1961,8 @@
       $$(".unit-btn").forEach((b) => b.classList.toggle("active", b.dataset.unit === state.units));
       setUnitLabels();
       stateToForm();
+      lastCustAddr = ""; // force the wizard's customer address into the map + costing ZIP
+      syncCustomerLocation();
       renderAll();
       saveCurrent();
     } catch (err) {
