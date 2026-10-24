@@ -10,7 +10,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>Planner</title>
-  <link rel="stylesheet" href="css/styles.css?v=1.5.7" />
+  <link rel="stylesheet" href="css/styles.css?v=1.6.0" />
 </head>
 <body>
   <header class="app-header">
@@ -335,6 +335,35 @@
     </div>
   </div>
 
-  <script src="js/app.js?v=1.5.7"></script>
+  <!-- CUT DIAGRAM -->
+  <div id="diagram" class="overlay" aria-hidden="true">
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="diagramTitle">
+      <div class="sheet-head">
+        <h2 id="diagramTitle">Cut diagram</h2>
+        <button type="button" id="diagramClose" class="icon-btn" aria-label="Close">✕</button>
+      </div>
+      <div class="sheet-body">
+        <div id="diagramView" class="diagram-view"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- VENDOR CART -->
+  <div id="cart" class="overlay" aria-hidden="true">
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="cartTitle">      <div class="sheet-head">
+        <h2 id="cartTitle">Cart</h2>
+        <button type="button" id="cartClose" class="icon-btn" aria-label="Close">✕</button>
+      </div>
+      <div class="sheet-body">
+        <div id="cartView" class="cart-view"></div>
+        <div class="cart-actions">
+          <button type="button" id="cartCopy" class="btn-ghost">📋 Copy list</button>
+          <button type="button" id="cartPrint" class="btn-ghost">🖨️ Print</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/app.js?v=1.6.0"></script>
 </body>
 </html>

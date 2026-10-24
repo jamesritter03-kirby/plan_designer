@@ -4,7 +4,7 @@
 
   const FT_PER_M = 3.280839895;
   const IN_PER_M = 39.3700787;
-  const APP_VERSION = "1.5.7";
+  const APP_VERSION = "1.6.0";
   const STORE_KEY = "shedPlanner.designs.v1";
   const SEEN_KEY = "shedPlanner.seen.v1";
   const THEME_KEY = "shedPlanner.theme.v1";
@@ -295,7 +295,8 @@
     return ROOF_COVER[state.roofCovering] || ROOF_COVER.asphalt;
   }
 
-  function estimate(g, perim, roofArea) {
+  // Build the itemized material lines (quantities + per-store price fn) for the estimate and cart.
+  function cartItems(g, perim, roofArea) {
     const mult = zipMultiplier(state.zip).mult;
     const coverMult = roofCover().mult;
     const W = state.width, D = state.depth, H = state.wallHeight, oh = state.overhang / 12;
@@ -317,14 +318,33 @@
     const plyDeck = Math.ceil((W * D) / 32);
     const osb = Math.ceil((perim * H) / 32) + Math.ceil(roofArea / 32);
     const wallArea = perim * H;
+
+    const items = [];
+    const push = (key, label, qty, qtyLabel, price, search) => items.push({ key, label, qty, qtyLabel, price, search });
+    const lumSearch = { "2x4": "2x4x8 lumber", "2x6": "2x6x8 lumber", "2x8": "2x8x8 lumber", "4x4": "4x4x8 treated post", "1x6": "1x6x8 trim board" };
+    for (const s of ["2x4", "2x6", "2x8", "4x4", "1x6"]) {
+      if (ft[s] <= 0) continue;
+      const lf = Math.ceil(ft[s]);
+      const boards = Math.ceil(lf / 8);
+      push(s, `${s} lumber`, boards, `${boards} × 8-ft (≈${lf} lin ft)`, (p) => ft[s] * p[s], lumSearch[s]);
+    }
+    push("plyDeck", 'Floor deck plywood (¾")', plyDeck, `${plyDeck} sheet${plyDeck === 1 ? "" : "s"}`, (p) => plyDeck * p.plyDeck, "3/4 plywood subfloor");
+    push("osb", 'OSB sheathing (7⁄16")', osb, `${osb} sheet${osb === 1 ? "" : "s"}`, (p) => osb * p.osb, "7/16 OSB sheathing");
+    push("roofing", `Roofing — ${roofCover().label.toLowerCase()}`, Math.ceil(roofArea), `≈ ${Math.ceil(roofArea)} sq ft`, (p) => roofArea * p.roofing * coverMult, roofCover().label + " roofing");
+    push("felt", "Roofing felt / underlayment", Math.ceil(roofArea), `≈ ${Math.ceil(roofArea)} sq ft`, (p) => roofArea * p.felt, "roofing felt underlayment");
+    push("wrap", "House wrap", Math.ceil(wallArea), `≈ ${Math.ceil(wallArea)} sq ft`, (p) => wallArea * p.wrap, "house wrap");
+    if (state.doors.length) push("door", "Exterior door(s)", state.doors.length, `${state.doors.length}`, (p) => state.doors.length * p.door, "exterior shed door");
+    if (state.windows.length) push("window", "Window(s)", state.windows.length, `${state.windows.length}`, (p) => state.windows.length * p.window, "shed window");
+    push("hardware", "Fasteners & hardware", 1, "lot", (p) => p.hardware, "exterior construction screws");
+    return { items, mult };
+  }
+
+  function estimate(g, perim, roofArea) {
+    const { items, mult } = cartItems(g, perim, roofArea);
     return Object.keys(PRICES).map((store) => {
       const p = PRICES[store];
-      let t = 0;
-      for (const s in ft) t += ft[s] * p[s];
-      t += plyDeck * p.plyDeck + osb * p.osb;
-      t += roofArea * p.roofing * coverMult + roofArea * p.felt + wallArea * p.wrap;
-      t += state.doors.length * p.door + state.windows.length * p.window + p.hardware;
-      return { store, total: Math.round(t * mult) };
+      const total = Math.round(items.reduce((a, it) => a + it.price(p), 0) * mult);
+      return { store, total };
     });
   }
 
@@ -444,6 +464,7 @@
       label: r.name,
       sub: r.note,
       qty: `${r.qty} pcs @ ${fmtLen(r.length)}`,
+      cut: { plumb: r.plumb, seat: r.seat },
       angles: [
         { k: "Plumb", v: fmtAng(r.plumb) },
         { k: "Seat", v: fmtAng(r.seat) },
@@ -466,8 +487,8 @@
       groups.push({
         title: "How to mark the angles",
         rows: [
-          { label: "Plumb cut (ridge/top)", sub: "Set speed square / miter saw to this angle off vertical reference", qty: "", angles: [{ k: "Angle", v: fmtAng(g.thetaDeg) }] },
-          { label: "Birdsmouth seat cut", sub: "Horizontal notch that sits on the top plate", qty: "", angles: [{ k: "Angle", v: fmtAng(90 - g.thetaDeg) }] },
+          { label: "Plumb cut (ridge/top)", sub: "Set speed square / miter saw to this angle off vertical reference", qty: "", cut: { plumb: g.thetaDeg, seat: 90 - g.thetaDeg, focus: "plumb" }, angles: [{ k: "Angle", v: fmtAng(g.thetaDeg) }] },
+          { label: "Birdsmouth seat cut", sub: "Horizontal notch that sits on the top plate", qty: "", cut: { plumb: g.thetaDeg, seat: 90 - g.thetaDeg, focus: "seat" }, angles: [{ k: "Angle", v: fmtAng(90 - g.thetaDeg) }] },
         ],
       });
     }
@@ -475,9 +496,9 @@
       groups.push({
         title: "Gambrel joint angles",
         rows: [
-          { label: "Lower rafter at eave", sub: "birdsmouth seat", qty: "", angles: [{ k: "Seat", v: "22.5°" }] },
-          { label: "Knee joint", sub: "lower meets upper rafter", qty: "", angles: [{ k: "Each cut", v: "22.5°" }] },
-          { label: "Peak joint", sub: "upper rafters meet", qty: "", angles: [{ k: "Each cut", v: "67.5°" }] },
+          { label: "Lower rafter at eave", sub: "birdsmouth seat", qty: "", cut: { plumb: 67.5, seat: 22.5 }, angles: [{ k: "Seat", v: "22.5°" }] },
+          { label: "Knee joint", sub: "lower meets upper rafter", qty: "", cut: { plumb: 67.5, seat: 22.5 }, angles: [{ k: "Each cut", v: "22.5°" }] },
+          { label: "Peak joint", sub: "upper rafters meet", qty: "", cut: { plumb: 22.5, seat: 67.5 }, angles: [{ k: "Each cut", v: "67.5°" }] },
         ],
       });
     }
@@ -1031,8 +1052,8 @@
     const est = estimate(g, perim, roofArea);
     const regionSub = /^\d{5}$/.test(state.zip) ? `ZIP ${state.zip} · ${region.label}` : "US average — add ZIP/address for local pricing";
     groups.unshift({
-      title: "Cost estimate (materials only)",
-      items: est.map((r) => ({ label: r.store, sub: regionSub, qty: "$" + r.total.toLocaleString() })),
+      title: "Cost estimate (tap a store for a cart)",
+      items: est.map((r) => ({ label: r.store, sub: regionSub, store: r.store, qty: "$" + r.total.toLocaleString() })),
     });
     const cheapest = Math.min(...est.map((r) => r.total));
     $("#shopSummary").innerHTML =
@@ -1056,7 +1077,10 @@
         const rows = gr.rows
           .map((r) => {
             const ang = (r.angles || []).map((a) => `<span class="angle">${a.k}: ${a.v}</span>`).join(" ");
-            return `<div class="row"><div class="label">${r.label}${r.sub ? `<small>${r.sub}</small>` : ""}</div>` +
+            const diag = r.cut
+              ? `<a class="cut-diagram" data-plumb="${r.cut.plumb}" data-seat="${r.cut.seat}" data-focus="${r.cut.focus || ""}" data-label="${escapeHtml(r.label)}">▱ diagram</a>`
+              : "";
+            return `<div class="row"><div class="label">${r.label}${r.sub ? `<small>${r.sub}</small>` : ""}${diag}</div>` +
               `<div style="text-align:right">${r.qty ? `<div class="qty">${r.qty}</div>` : ""}${ang}</div></div>`;
           })
           .join("");
@@ -1065,15 +1089,122 @@
       .join("");
   }
 
+  // Small rafter cut diagram for the popup — plumb cut at ridge, birdsmouth seat at wall.
+  function rafterCutDiagram(plumb, seat, focus) {
+    const vw = 280, vh = 180;
+    const col = { line: "#1b2a3a", wood: "#caa96b", dim: "#51607a", hi: "#c0392b" };
+    const theta = (Math.max(1, Math.min(80, plumb)) * Math.PI) / 180;
+    const len = 200, t = 20;
+    const ex = 30, ey = vh - 34;                 // eave (bottom-left)
+    const rx = ex + Math.cos(theta) * len;        // ridge x
+    const ry = ey - Math.sin(theta) * len;        // ridge y
+    const px = -Math.sin(theta) * t, py = -Math.cos(theta) * t; // perpendicular (up)
+    const P = (x, y) => `${x.toFixed(1)},${y.toFixed(1)}`;
+    let s = "";
+    // reference ground line
+    s += `<line x1="0" y1="${ey}" x2="${vw}" y2="${ey}" stroke="${col.dim}" stroke-width="1" stroke-dasharray="4 3" opacity="0.6"/>`;
+    // rafter board
+    s += `<polygon points="${P(ex, ey)} ${P(rx, ry)} ${P(rx + px, ry + py)} ${P(ex + px, ey + py)}" fill="${col.wood}" stroke="${col.line}" stroke-width="1.6" stroke-linejoin="round"/>`;
+    // ridge plumb cut (vertical reference + cut face)
+    const plumbHi = focus === "plumb" ? col.hi : col.line;
+    s += `<line x1="${rx.toFixed(1)}" y1="${(ry + py - 14).toFixed(1)}" x2="${rx.toFixed(1)}" y2="${(ry + 8).toFixed(1)}" stroke="${col.dim}" stroke-width="1" stroke-dasharray="3 3"/>`;
+    s += `<line x1="${rx.toFixed(1)}" y1="${ry.toFixed(1)}" x2="${(rx + px).toFixed(1)}" y2="${(ry + py).toFixed(1)}" stroke="${plumbHi}" stroke-width="2.4"/>`;
+    s += `<text x="${(rx - 6).toFixed(1)}" y="${(ry + py - 18).toFixed(1)}" fill="${plumbHi}" font-size="10" text-anchor="end">plumb ${fmtAng(plumb)}</text>`;
+    // birdsmouth seat notch at eave
+    const seatHi = focus === "seat" ? col.hi : col.line;
+    const nd = 42;
+    const bx = ex + Math.cos(theta) * nd, by = ey - Math.sin(theta) * nd;
+    s += `<path d="M ${P(ex + px, ey + py)} L ${P(bx + px, by + py)} L ${P(bx + px, ey)} Z" fill="#fff" stroke="${seatHi}" stroke-width="2"/>`;
+    s += `<line x1="${(ex - 6).toFixed(1)}" y1="${ey.toFixed(1)}" x2="${(bx + 18).toFixed(1)}" y2="${ey.toFixed(1)}" stroke="${col.dim}" stroke-width="1" stroke-dasharray="3 3"/>`;
+    s += `<text x="${(bx + px + 6).toFixed(1)}" y="${(ey + 16).toFixed(1)}" fill="${seatHi}" font-size="10">seat ${fmtAng(seat)}</text>`;
+    s += `<text x="${vw / 2}" y="16" fill="${col.line}" font-size="10" text-anchor="middle">Rafter · ridge (right) · wall (left)</text>`;
+    return svgWrap(s, vw, vh);
+  }
+
+  function openCutDiagram(label, plumb, seat, focus) {
+    $("#diagramTitle").textContent = label || "Cut diagram";
+    $("#diagramView").innerHTML = rafterCutDiagram(plumb, seat, focus) +
+      `<p class="diagram-note">Set a speed square / miter to the <b>plumb</b> angle for the ridge end and the <b>seat</b> angle for the birdsmouth. Angles are off their reference lines (dashed).</p>`;
+    openOverlay("#diagram");
+  }
+
   const chip = (b, s) => `<div class="chip"><b>${b}</b><span>${s}</span></div>`;
   function groupHtml(gr) {
     const rows = gr.items
-      .map(
-        (it) =>
-          `<div class="row"><div class="label">${it.label}${it.sub ? `<small>${it.sub}</small>` : ""}</div><div class="qty">${it.qty}</div></div>`
-      )
+      .map((it) => {
+        const cls = it.store ? "row cart-link" : "row";
+        const data = it.store ? ` data-store="${escapeHtml(it.store)}"` : "";
+        const qty = it.store ? `${it.qty} ›` : it.qty;
+        return `<div class="${cls}"${data}><div class="label">${it.label}${it.sub ? `<small>${it.sub}</small>` : ""}</div><div class="qty">${qty}</div></div>`;
+      })
       .join("");
     return `<div class="group"><h3>${gr.title}<span class="count">${gr.items.length} item${gr.items.length === 1 ? "" : "s"}</span></h3>${rows}</div>`;
+  }
+
+  /* ---------- Vendor cart ---------- */
+  const STORE_SEARCH = {
+    "Lowe's": "https://www.lowes.com/search?searchTerm=",
+    "Home Depot": "https://www.homedepot.com/s/",
+    "McCoy's": "https://www.mccoys.com/search?q=",
+  };
+  const cartChecked = {}; // { store: { lineKey: true } } — session only
+
+  function cartLinesFor(store) {
+    const { g, perim, roofArea } = materials();
+    const { items, mult } = cartItems(g, perim, roofArea);
+    const p = PRICES[store];
+    let total = 0;
+    const lines = items.map((it) => {
+      const ext = Math.round(it.price(p) * mult);
+      total += ext;
+      return { key: it.key, label: it.label, qtyLabel: it.qtyLabel, ext, search: it.search };
+    });
+    return { lines, total };
+  }
+
+  function openCart(store) {
+    if (!STORE_SEARCH[store]) return;
+    const { lines, total } = cartLinesFor(store);
+    const base = STORE_SEARCH[store];
+    const checks = cartChecked[store] || (cartChecked[store] = {});
+    const rows = lines
+      .map((l) => {
+        const url = base + encodeURIComponent(l.search);
+        return `<div class="cart-row">
+          <label class="cart-check"><input type="checkbox" data-key="${l.key}" ${checks[l.key] ? "checked" : ""}></label>
+          <div class="cart-main"><b>${l.label}</b><small>${l.qtyLabel}</small></div>
+          <div class="cart-right"><span class="cart-ext">$${l.ext.toLocaleString()}</span>
+            <a class="cart-search" href="${url}" target="_blank" rel="noopener">search ↗</a></div>
+        </div>`;
+      })
+      .join("");
+    $("#cartTitle").textContent = store + " cart";
+    $("#cartView").innerHTML = rows +
+      `<div class="cart-total"><span>Estimated total</span><b>$${total.toLocaleString()}</b></div>` +
+      `<p class="cart-note">Rough estimate — tap “search” to find each item on ${escapeHtml(store)}.com. Quantities include a little waste; buy to suit.</p>`;
+    cartChecked._store = store;
+    openOverlay("#cart");
+  }
+
+  function cartText(store) {
+    const { lines, total } = cartLinesFor(store);
+    const head = `${store} shopping list — ${state.name || "Shed"}`;
+    const body = lines.map((l) => `- ${l.qtyLabel} — ${l.label} ($${l.ext.toLocaleString()})`).join("\n");
+    return `${head}\n${body}\nEstimated total: $${total.toLocaleString()}`;
+  }
+
+  function copyCart() {
+    const store = cartChecked._store;
+    if (!store) return;
+    const text = cartText(store);
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(() => toast("List copied"), () => toast("Copy failed"));
+    } else {
+      const ta = document.createElement("textarea");
+      ta.value = text; document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); toast("List copied"); } catch { toast("Copy failed"); }
+      ta.remove();
+    }
   }
 
   /* ---------- Build steps ---------- */
@@ -1742,6 +1873,27 @@
     $("#drawingsClose").addEventListener("click", () => closeOverlay("#drawings"));
     initMenu();
     $("#designsClose").addEventListener("click", () => closeOverlay("#designs"));
+    // vendor cart: click a store in the estimate, plus cart actions
+    $("#shoppingList").addEventListener("click", (e) => {
+      const row = e.target.closest(".cart-link");
+      if (row && row.dataset.store) openCart(row.dataset.store);
+    });
+    $("#cartClose").addEventListener("click", () => closeOverlay("#cart"));
+    $("#cartCopy").addEventListener("click", copyCart);
+    $("#cartPrint").addEventListener("click", () => window.print());
+    $("#cartView").addEventListener("change", (e) => {
+      const cb = e.target.closest('input[type="checkbox"]');
+      if (!cb) return;
+      const store = cartChecked._store;
+      if (store) (cartChecked[store] = cartChecked[store] || {})[cb.dataset.key] = cb.checked;
+    });
+    // cut-sheet diagram popups
+    $("#cutSheet").addEventListener("click", (e) => {
+      const a = e.target.closest(".cut-diagram");
+      if (!a) return;
+      openCutDiagram(a.dataset.label, parseFloat(a.dataset.plumb), parseFloat(a.dataset.seat), a.dataset.focus);
+    });
+    $("#diagramClose").addEventListener("click", () => closeOverlay("#diagram"));
     $("#newDesignBtn").addEventListener("click", () => {
       closeOverlay("#designs");
       startWizard(true);
