@@ -4,7 +4,7 @@
 
   const FT_PER_M = 3.280839895;
   const IN_PER_M = 39.3700787;
-  const APP_VERSION = "1.5.6";
+  const APP_VERSION = "1.5.7";
   const STORE_KEY = "shedPlanner.designs.v1";
   const SEEN_KEY = "shedPlanner.seen.v1";
   const THEME_KEY = "shedPlanner.theme.v1";
@@ -13,7 +13,6 @@
   const state = {
     id: null,
     name: "",
-    purpose: "storage",
     units: "imperial",
     roofType: "gable",
     roofCovering: "asphalt",
@@ -1487,7 +1486,7 @@
   function startWizard(fresh) {
     if (fresh) {
       Object.assign(state, {
-        id: null, name: "", purpose: "storage", roofType: "gable", pitch: 4, overhang: 12,
+        id: null, name: "", roofType: "gable", pitch: 4, overhang: 12,
         width: 8, depth: 10, wallHeight: 7, spacing: 16, lumber: "2x4",
         doors: [{ type: "single", wall: "front", pos: "center", w: 3, h: 6.5 }],
         windows: [{ wall: "left", pos: "center", w: 2, h: 2 }],
@@ -1496,7 +1495,7 @@
     }
     wiz.step = 0;
     wiz.draft = {
-      units: state.units, purpose: state.purpose, roofType: state.roofType,
+      units: state.units, roofType: state.roofType,
       spacing: String(state.spacing), lumber: state.lumber, pitch: state.pitch,
     };
     $("#wizName").value = state.name || "";
@@ -1513,7 +1512,6 @@
 
   function syncWizardChoices() {
     setChoice("units", wiz.draft.units);
-    setChoice("purpose", wiz.draft.purpose);
     setChoice("roofType", wiz.draft.roofType);
     setChoice("spacing", wiz.draft.spacing);
     setChoice("lumber", wiz.draft.lumber);
@@ -1546,7 +1544,6 @@
       const toFtU = (v) => (u === "metric" ? v * FT_PER_M : v);
       state.units = u;
       state.name = $("#wizName").value.trim();
-      state.purpose = wiz.draft.purpose;
       state.roofType = wiz.draft.roofType;
       state.spacing = parseInt(wiz.draft.spacing, 10);
       state.lumber = wiz.draft.lumber;
