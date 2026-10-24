@@ -6,6 +6,7 @@
   const IN_PER_M = 39.3700787;
   const STORE_KEY = "shedPlanner.designs.v1";
   const SEEN_KEY = "shedPlanner.seen.v1";
+  const THEME_KEY = "shedPlanner.theme.v1";
 
   /* ---------- State ---------- */
   const state = {
@@ -23,7 +24,10 @@
     lumber: "2x4",
     doorWidth: 3, // ft
     doorHeight: 6.5, // ft
+    doorPos: "center",
     windows: 1,
+    winWidth: 2, // ft
+    winHeight: 2, // ft
     view: "front",
   };
 
@@ -242,8 +246,8 @@
         { label: `Roofing — shingles or metal`, sub: `cover roof area`, qty: `≈ ${Math.ceil(roofArea)} sq ft` },
         { label: `Roofing felt / underlayment`, sub: `under roofing`, qty: `≈ ${Math.ceil(roofArea)} sq ft` },
         { label: `House wrap`, sub: `walls`, qty: `≈ ${Math.ceil(perim * H)} sq ft` },
-        { label: `Exterior door`, sub: `${fmtLen(state.doorWidth)} × ${fmtLen(state.doorHeight)}`, qty: `1` },
-        { label: `Windows`, sub: `your choice of size`, qty: `${state.windows}` },
+        { label: `Exterior door`, sub: `${fmtLen(state.doorWidth)} × ${fmtLen(state.doorHeight)}, ${state.doorPos}`, qty: `1` },
+        { label: `Windows`, sub: `${fmtLen(state.winWidth)} × ${fmtLen(state.winHeight)} each`, qty: `${state.windows}` },
         { label: `Framing nails / screws, joist hangers, hurricane ties`, sub: `assorted`, qty: `as needed` },
       ],
     });
@@ -341,16 +345,30 @@
     s += `<rect x="${sx(0)}" y="${sy(H)}" width="${W * scale}" height="${H * scale}" fill="${C.wall}" stroke="${C.line}" stroke-width="2"/>`;
     // roof shape (front shows gable triangle etc.)
     s += roofFrontPath(g, sx, sy);
-    // door
-    const dw = Math.min(state.doorWidth, W * 0.6), dh = Math.min(state.doorHeight, H * 0.95);
-    const dx = sx(W / 2 - dw / 2);
+    // door (position: left / center / right on the front wall)
+    const dw = Math.min(state.doorWidth, W * 0.8), dh = Math.min(state.doorHeight, H * 0.95);
+    const margin = Math.min(0.5, W * 0.06);
+    const doorLeftFt =
+      state.doorPos === "left" ? margin :
+      state.doorPos === "right" ? W - margin - dw :
+      W / 2 - dw / 2;
+    const dx = sx(doorLeftFt);
     s += `<rect x="${dx}" y="${sy(dh)}" width="${dw * scale}" height="${dh * scale}" fill="${C.door}" stroke="${C.line}" stroke-width="1.5"/>`;
-    s += `<circle cx="${dx + dw * scale - 8}" cy="${sy(dh / 2)}" r="2.5" fill="${C.dim}"/>`;
-    // windows
-    for (let i = 0; i < Math.min(state.windows, 2); i++) {
-      const wx = sx(i === 0 ? W * 0.12 : W * 0.72);
-      const wy = sy(H * 0.75);
-      const ww = W * 0.14 * scale, wh = H * 0.3 * scale;
+    const knobSide = state.doorPos === "right" ? dx + 8 : dx + dw * scale - 8;
+    s += `<circle cx="${knobSide}" cy="${sy(dh / 2)}" r="2.5" fill="${C.dim}"/>`;
+    // windows sized from the inputs, spread across the wall avoiding the door
+    const nWin = Math.min(state.windows, 4);
+    const ww = Math.min(state.winWidth, W * 0.3) * scale;
+    const wh = Math.min(state.winHeight, H * 0.6) * scale;
+    const wy = sy(H * 0.5 + state.winHeight / 2);
+    for (let i = 0; i < nWin; i++) {
+      const slot = (W / (nWin + 1)) * (i + 1);
+      let wcx = sx(slot);
+      // nudge away from the door if overlapping
+      if (Math.abs(slot - (doorLeftFt + dw / 2)) < dw / 2 + state.winWidth / 2) {
+        wcx = state.doorPos === "right" ? sx(Math.max(margin, slot - dw)) : sx(Math.min(W - margin, slot + dw));
+      }
+      const wx = wcx - ww / 2;
       s += `<rect x="${wx}" y="${wy}" width="${ww}" height="${wh}" fill="#bcd6e8" stroke="${C.line}" stroke-width="1.5"/>`;
       s += `<line x1="${wx + ww / 2}" y1="${wy}" x2="${wx + ww / 2}" y2="${wy + wh}" stroke="${C.line}" stroke-width="1"/>`;
       s += `<line x1="${wx}" y1="${wy + wh / 2}" x2="${wx + ww}" y2="${wy + wh / 2}" stroke="${C.line}" stroke-width="1"/>`;
@@ -388,35 +406,53 @@
 
   function sideElevation(g) {
     const vw = 320, vh = 220, pad = 34;
-    const maxD = state.depth, maxH = g.peakHeight;
-    const scale = Math.min((vw - pad * 2) / maxD, (vh - pad * 2) / maxH);
-    const x0 = (vw - maxD * scale) / 2;
+    const oh = state.overhang / 12;
+    const maxExtent = state.depth + 2 * oh, maxH = g.peakHeight;
+    const scale = Math.min((vw - pad * 2) / maxExtent, (vh - pad * 2) / maxH);
+    const x0 = (vw - state.depth * scale) / 2;
     const yBase = vh - pad;
     const sx = (ft) => x0 + ft * scale;
     const sy = (ft) => yBase - ft * scale;
     const D = state.depth, H = state.wallHeight;
-    const oh = state.overhang / 12;
-    let s = "";
-    s += `<rect x="${sx(0)}" y="${sy(H)}" width="${D * scale}" height="${H * scale}" fill="${C.wall}" stroke="${C.line}" stroke-width="2"/>`;
-    // roof as a horizontal band at peak height along depth (side view hides slope)
     const top = g.peakHeight;
+    let s = "";
+    // ground line with hatching
+    s += `<line x1="${sx(-oh) - 8}" y1="${sy(0)}" x2="${sx(D + oh) + 8}" y2="${sy(0)}" stroke="${C.dim}" stroke-width="1.5"/>`;
+    for (let gx = sx(-oh) - 6; gx < sx(D + oh) + 8; gx += 7) {
+      s += `<line x1="${gx}" y1="${sy(0)}" x2="${gx - 5}" y2="${sy(0) + 6}" stroke="${C.dim}" stroke-width="1" opacity="0.6"/>`;
+    }
+    // side wall
+    s += `<rect x="${sx(0)}" y="${sy(H)}" width="${D * scale}" height="${H * scale}" fill="${C.wall}" stroke="${C.line}" stroke-width="2"/>`;
+    // vertical siding boards
+    for (let i = 1; i * 1.333 < D; i++) {
+      const bx = sx(i * 1.333);
+      s += `<line x1="${bx}" y1="${sy(H)}" x2="${bx}" y2="${sy(0)}" stroke="${C.wall2}" stroke-width="1" opacity="0.7"/>`;
+    }
+    // roof band with eaves projecting past the wall + fascia
     s += `<polygon points="${sx(-oh)},${sy(H)} ${sx(-oh)},${sy(top)} ${sx(D + oh)},${sy(top)} ${sx(D + oh)},${sy(H)}" fill="${C.roof}" stroke="${C.line}" stroke-width="2"/>`;
-    // show rafter spacing ticks
+    // ridge line
+    s += `<line x1="${sx(-oh)}" y1="${sy(top)}" x2="${sx(D + oh)}" y2="${sy(top)}" stroke="${C.line}" stroke-width="1.5" opacity="0.8"/>`;
+    // eave / fascia line
+    s += `<line x1="${sx(-oh)}" y1="${sy(H)}" x2="${sx(D + oh)}" y2="${sy(H)}" stroke="${C.line}" stroke-width="2"/>`;
+    // rafter tails under the eaves
     const n = raftersPerSide();
     for (let i = 0; i < n; i++) {
-      const fx = sx((state.depth / (n - 1 || 1)) * i);
-      s += `<line x1="${fx}" y1="${sy(H)}" x2="${fx}" y2="${sy(top)}" stroke="${C.line}" stroke-width="1" opacity="0.5"/>`;
+      const fx = sx((D / (n - 1 || 1)) * i);
+      s += `<line x1="${fx}" y1="${sy(H)}" x2="${fx}" y2="${sy(H) - 5}" stroke="${C.line}" stroke-width="1" opacity="0.45"/>`;
     }
-    // stud spacing ticks on wall
-    const ns = studsForWall(D);
-    for (let i = 0; i < ns; i++) {
-      const fx = sx((state.depth / (ns - 1 || 1)) * i);
-      s += `<line x1="${fx}" y1="${sy(H)}" x2="${fx}" y2="${sy(0)}" stroke="${C.stud}" stroke-width="1" opacity="0.6"/>`;
+    // a window on the side wall
+    if (state.windows > 0) {
+      const ww = Math.min(state.winWidth, D * 0.3) * scale;
+      const wh = Math.min(state.winHeight, H * 0.6) * scale;
+      const wx = sx(D * 0.5) - ww / 2;
+      const wyy = sy(H * 0.5 + state.winHeight / 2);
+      s += `<rect x="${wx}" y="${wyy}" width="${ww}" height="${wh}" fill="#bcd6e8" stroke="${C.line}" stroke-width="1.5"/>`;
+      s += `<line x1="${wx + ww / 2}" y1="${wyy}" x2="${wx + ww / 2}" y2="${wyy + wh}" stroke="${C.line}" stroke-width="1"/>`;
+      s += `<line x1="${wx}" y1="${wyy + wh / 2}" x2="${wx + ww}" y2="${wyy + wh / 2}" stroke="${C.line}" stroke-width="1"/>`;
     }
-    s += `<rect x="${sx(0)}" y="${sy(H)}" width="${D * scale}" height="${H * scale}" fill="none" stroke="${C.line}" stroke-width="2"/>`;
     s += dimLineH(sx(0), sx(D), yBase + 16, fmtLen(D), scale);
-    s += dimLineV(x0 - 16, sy(0), sy(g.peakHeight), fmtLen(g.peakHeight));
-    s += `<text x="${vw / 2}" y="${sy(top) - 6}" fill="${C.dim}" font-size="9" text-anchor="middle">${n} rafters @ ${state.spacing}" O.C.</text>`;
+    s += dimLineV(sx(-oh) - 14, sy(0), sy(top), fmtLen(top));
+    s += `<text x="${sx(D / 2)}" y="${sy(top) + 13}" fill="#04121c" font-size="9" text-anchor="middle">ridge · ${n} rafters @ ${state.spacing}" O.C.</text>`;
     return svgWrap(s, vw, vh);
   }
 
@@ -444,18 +480,28 @@
       s += `<line x1="${fx}" y1="${sy(0)}" x2="${fx}" y2="${sy(D)}" stroke="${C.line}" stroke-width="1.5" stroke-dasharray="4 3" opacity="0.55"/>`;
     }
     s += `<rect x="${sx(0)}" y="${sy(0)}" width="${W * scale}" height="${D * scale}" fill="none" stroke="${C.line}" stroke-width="2.5"/>`;
-    // door opening on the front wall (bottom edge) with swing arc
+    // dashed roof-overhang (eaves) outline around the walls
+    const oh = state.overhang / 12;
+    s += `<rect x="${sx(-oh)}" y="${sy(-oh)}" width="${(W + 2 * oh) * scale}" height="${(D + 2 * oh) * scale}" fill="none" stroke="${C.roof}" stroke-width="1.3" stroke-dasharray="5 4" opacity="0.8"/>`;
+    // door opening on the front wall (bottom edge) with swing arc, honoring position
     const dw = Math.min(state.doorWidth, W * 0.8);
-    const dxc = W / 2;
+    const margin = Math.min(0.5, W * 0.06);
+    const dxc =
+      state.doorPos === "left" ? margin + dw / 2 :
+      state.doorPos === "right" ? W - margin - dw / 2 :
+      W / 2;
     s += `<rect x="${sx(dxc - dw / 2)}" y="${sy(D) - 3}" width="${dw * scale}" height="6" fill="#0d1524" stroke="none"/>`;
-    s += `<path d="M ${sx(dxc - dw / 2)} ${sy(D)} A ${dw * scale} ${dw * scale} 0 0 1 ${sx(dxc + dw / 2)} ${sy(D)}" fill="none" stroke="${C.door}" stroke-width="1.5" opacity="0.8"/>`;
-    s += `<line x1="${sx(dxc - dw / 2)}" y1="${sy(D)}" x2="${sx(dxc - dw / 2)}" y2="${sy(D) - dw * scale}" stroke="${C.door}" stroke-width="2"/>`;
+    const hinge = state.doorPos === "right" ? dxc + dw / 2 : dxc - dw / 2;
+    const sweep = state.doorPos === "right" ? 0 : 1;
+    s += `<path d="M ${sx(hinge)} ${sy(D)} A ${dw * scale} ${dw * scale} 0 0 ${sweep} ${sx(state.doorPos === "right" ? dxc - dw / 2 : dxc + dw / 2)} ${sy(D)}" fill="none" stroke="${C.door}" stroke-width="1.5" opacity="0.8"/>`;
+    s += `<line x1="${sx(hinge)}" y1="${sy(D)}" x2="${sx(hinge)}" y2="${sy(D) - dw * scale}" stroke="${C.door}" stroke-width="2"/>`;
     s += `<text x="${sx(dxc)}" y="${sy(D) + 26}" fill="${C.dim}" font-size="9" text-anchor="middle">door</text>`;
     // windows on side walls
     for (let i = 0; i < Math.min(state.windows, 2); i++) {
       const wy = sy(D * (i === 0 ? 0.5 : 0.3));
       const side = i === 0 ? sx(0) : sx(W);
-      s += `<rect x="${side - 3}" y="${wy - (D * 0.14 * scale) / 2}" width="6" height="${D * 0.14 * scale}" fill="#bcd6e8" stroke="${C.line}" stroke-width="1"/>`;
+      const wlen = Math.min(state.winWidth, D * 0.4) * scale;
+      s += `<rect x="${side - 3}" y="${wy - wlen / 2}" width="6" height="${wlen}" fill="#bcd6e8" stroke="${C.line}" stroke-width="1"/>`;
     }
     s += dimLineH(sx(0), sx(W), sy(0) - 14, fmtLen(W), scale);
     s += dimLineV(sx(0) - 14, sy(0), sy(D), fmtLen(D));
@@ -603,7 +649,7 @@
     steps.push({
       tag: "Finish",
       title: "Doors, windows & trim",
-      body: `Hang the ${fmtLen(state.doorWidth)} × ${fmtLen(state.doorHeight)} door${state.windows > 0 ? ` and install ${state.windows} window(s)` : ""}, flashing and caulking each opening. Add corner and trim boards and fascia.`,
+      body: `Hang the ${fmtLen(state.doorWidth)} × ${fmtLen(state.doorHeight)} door on the ${state.doorPos} of the front wall${state.windows > 0 ? ` and install ${state.windows} × ${fmtLen(state.winWidth)} × ${fmtLen(state.winHeight)} window(s)` : ""}, flashing and caulking each opening. Add corner and trim boards and fascia.`,
     });
     steps.push({
       tag: "Finish",
@@ -648,7 +694,10 @@
     state.lumber = $("#lumber").value;
     state.doorWidth = toFt(parseFloat($("#doorWidth").value) || 0);
     state.doorHeight = toFt(parseFloat($("#doorHeight").value) || 0);
+    state.doorPos = $("#doorPos").value;
     state.windows = parseInt($("#windows").value, 10) || 0;
+    state.winWidth = toFt(parseFloat($("#winWidth").value) || 0);
+    state.winHeight = toFt(parseFloat($("#winHeight").value) || 0);
     $("#pitchOut").textContent = `${state.pitch} / 12`;
     togglePitchField();
     renderAll();
@@ -666,7 +715,10 @@
     $("#lumber").value = state.lumber;
     $("#doorWidth").value = round(dispLen(state.doorWidth), 2);
     $("#doorHeight").value = round(dispLen(state.doorHeight), 2);
+    $("#doorPos").value = state.doorPos || "center";
     $("#windows").value = state.windows;
+    $("#winWidth").value = round(dispLen(state.winWidth), 2);
+    $("#winHeight").value = round(dispLen(state.winHeight), 2);
     togglePitchField();
   }
 
@@ -921,8 +973,30 @@
     toastTimer = setTimeout(() => t.classList.remove("show"), 1800);
   }
 
+  /* ---------- Theme ---------- */
+  function applyTheme(theme) {
+    document.documentElement.setAttribute("data-theme", theme);
+    const btn = $("#themeBtn");
+    if (btn) btn.textContent = theme === "light" ? "☀️" : "🌙";
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute("content", theme === "light" ? "#ffffff" : "#1b2a3a");
+    localStorage.setItem(THEME_KEY, theme);
+  }
+  function initTheme() {
+    let theme = localStorage.getItem(THEME_KEY);
+    if (!theme) {
+      theme = window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+    }
+    applyTheme(theme);
+    $("#themeBtn").addEventListener("click", () => {
+      const next = document.documentElement.getAttribute("data-theme") === "light" ? "dark" : "light";
+      applyTheme(next);
+    });
+  }
+
   /* ---------- Init ---------- */
   function init() {
+    initTheme();
     initTabs();
     initWizard();
     $("#shed-form").addEventListener("input", formToState);

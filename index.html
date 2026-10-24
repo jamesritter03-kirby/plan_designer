@@ -20,6 +20,7 @@
         <button type="button" class="unit-btn active" data-unit="imperial">ft/in</button>
         <button type="button" class="unit-btn" data-unit="metric">m</button>
       </div>
+      <button type="button" id="themeBtn" class="icon-btn" aria-label="Toggle light or dark theme">🌙</button>
       <button type="button" id="designsBtn" class="icon-btn" aria-label="Saved designs">📁</button>
     </div>
   </header>
@@ -119,8 +120,24 @@
             <input type="number" id="doorHeight" value="6.5" min="0" step="0.5" inputmode="decimal" />
           </label>
           <label class="field">
-            <span>Windows</span>
-            <input type="number" id="windows" value="1" min="0" step="1" inputmode="numeric" />
+            <span>Door position (front wall)</span>
+            <select id="doorPos">
+              <option value="left">Left</option>
+              <option value="center" selected>Center</option>
+              <option value="right">Right</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Number of windows</span>
+            <input type="number" id="windows" value="1" min="0" max="6" step="1" inputmode="numeric" />
+          </label>
+          <label class="field">
+            <span>Window width (<em class="u-len">ft</em>)</span>
+            <input type="number" id="winWidth" value="2" min="0.5" step="0.5" inputmode="decimal" />
+          </label>
+          <label class="field">
+            <span>Window height (<em class="u-len">ft</em>)</span>
+            <input type="number" id="winHeight" value="2" min="0.5" step="0.5" inputmode="decimal" />
           </label>
         </fieldset>
       </form>

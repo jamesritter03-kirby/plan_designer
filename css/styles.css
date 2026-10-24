@@ -12,6 +12,26 @@
   --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
 
+:root[data-theme="light"] {
+  --bg: #eef1f6;
+  --surface: #ffffff;
+  --surface-2: #e7edf5;
+  --line: #ccd6e4;
+  --text: #15202e;
+  --muted: #566579;
+  --accent: #e07a2d;
+  --accent-2: #2b7fb3;
+  --good: #2f9e63;
+}
+
+:root[data-theme="light"] .app-header {
+  background: linear-gradient(180deg, #ffffff, #f2f5fa);
+}
+:root[data-theme="light"] .btn-primary { color: #fff; }
+:root[data-theme="light"] .unit-btn.active,
+:root[data-theme="light"] .view-btn.active,
+:root[data-theme="light"] .step-num { color: #fff; }
+
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
 html, body {
